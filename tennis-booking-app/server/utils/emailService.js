@@ -103,51 +103,67 @@ class EmailService {
     });
   }
   
-  async sendBookingConfirmation(user, booking, court) {
+
+async sendBookingCancellation(user, booking, court) {
     const bookingDate = new Date(booking.date).toLocaleDateString('en-US', {
       weekday: 'long',
       year: 'numeric',
       month: 'long',
       day: 'numeric'
     });
-    
+
+    let cancellationReasonMessage = '';
+    if (booking.cancellationReason) {
+      cancellationReasonMessage = `<p><strong>Reason for cancellation:</strong> ${booking.cancellationReason}</p>`;
+    }
+
+    let cancelledByMessage = 'by you';
+    if (booking.cancelledBy && booking.cancelledBy.toString() !== user._id.toString()) {
+      // Assuming you might want to indicate if an admin cancelled it.
+      // You might need to fetch admin details if you want to name them,
+      // or have a generic message.
+      cancelledByMessage = 'by an administrator';
+    }
+
     const html = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h1 style="color: #333;">Booking Confirmed!</h1>
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #ddd; padding: 20px; border-radius: 5px;">
+        <h1 style="color: #d9534f; text-align: center;">Booking Cancelled</h1>
         <p>Hi ${user.firstName || user.username},</p>
-        <p>Your tennis court booking has been confirmed:</p>
-        <div style="background-color: #f5f5f5; padding: 20px; border-radius: 5px; margin: 20px 0;">
-          <h3 style="color: #333; margin-top: 0;">Booking Details</h3>
+        <p>This email confirms that your booking for the following tennis court has been cancelled ${cancelledByMessage}:</p>
+        
+        <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin: 20px 0;">
+          <h3 style="color: #333; margin-top: 0;">Cancelled Booking Details:</h3>
           <p><strong>Court:</strong> ${court.name}</p>
           <p><strong>Date:</strong> ${bookingDate}</p>
           <p><strong>Time:</strong> ${booking.startTime} - ${booking.endTime}</p>
-          <p><strong>Duration:</strong> ${booking.getDurationMinutes()} minutes</p>
           <p><strong>Booking ID:</strong> ${booking._id}</p>
-          ${booking.players?.length > 0 ? `
-            <p><strong>Players:</strong></p>
-            <ul>
-              ${booking.players.map(p => `<li>${p.name}${p.email ? ` (${p.email})` : ''}</li>`).join('')}
-            </ul>
-          ` : ''}
+          ${cancellationReasonMessage}
         </div>
-        <h3>Important Information</h3>
-        <ul>
-          <li>Please arrive 10 minutes before your booking time</li>
-          <li>Cancellations must be made at least ${court.bookingRules?.cancellationDeadlineHours || 2} hours in advance</li>
-          <li>Bring appropriate tennis shoes and equipment</li>
-        </ul>
-        <hr style="border: 1px solid #eee; margin: 30px 0;">
-        <p style="color: #666; font-size: 14px;">
-          Need to modify or cancel your booking? Visit your dashboard or contact us.
+
+        ${booking.totalPrice > 0 && booking.paymentStatus !== 'refunded' ? 
+          '<p>If a payment was made for this booking, please check your account or contact us regarding the refund process. Current payment status: <strong>' + booking.paymentStatus + '</strong>.</p>' 
+          : ''
+        }
+        ${booking.paymentStatus === 'refunded' ? 
+          '<p>A refund for this booking has been processed.</p>' 
+          : ''
+        }
+
+        <p>If you have any questions or believe this cancellation was made in error, please contact us immediately.</p>
+        
+        <hr style="border: 0; border-top: 1px solid #eee; margin: 30px 0;">
+        <p style="color: #666; font-size: 14px; text-align: center;">
+          Thank you,
+          <br>The Tennis Court Booking Team
         </p>
       </div>
     `;
-    
+
     await this.sendEmail({
       to: user.email,
-      subject: `Booking Confirmed - ${court.name} on ${bookingDate}`,
+      subject: `Booking Cancellation Confirmation - ${court.name} on ${bookingDate}`,
       html,
-      text: `Your booking is confirmed for ${court.name} on ${bookingDate} from ${booking.startTime} to ${booking.endTime}`
+      text: `Your booking for ${court.name} on ${bookingDate} from ${booking.startTime} to ${booking.endTime} has been cancelled. Booking ID: ${booking._id}. ${booking.cancellationReason ? 'Reason: ' + booking.cancellationReason : ''}`
     });
   }
 }

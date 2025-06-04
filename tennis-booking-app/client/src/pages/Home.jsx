@@ -1,172 +1,240 @@
-import React from 'react'
-import { Link } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
-import { useAnnouncements } from '../hooks/useAnnouncements'
-import { Calendar, Clock, Users, Shield, ArrowRight, Bell } from 'lucide-react'
+// client/src/pages/Home.jsx
+import React from 'react';
+import { Link } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { useQuery } from 'react-query'; // For fetching announcements
+import announcementService from '../services/announcementService'; // Import your service
+import { Calendar as CalendarIcon, Clock, Users, ShieldCheck, ArrowRight, Bell, Zap, ThumbsUp, CheckCircle } from 'lucide-react'; // Added more icons
+
+// Common Components
+import Card from '../components/common/Card';
+import Button from '../components/common/Button';
+import LoadingSpinner from '../components/common/LoadingSpinner'; // For announcements loading
+import { format, parseISO } from 'date-fns'; // For formatting announcement dates
 
 const Home = () => {
-  const { isAuthenticated } = useAuth()
-  const { data: announcementsData } = useAnnouncements({ limit: 3, type: 'urgent' })
+  const { user, isAuthenticated } = useAuth(); // Get user for personalized CTA
+
+  // Fetch a few recent/important announcements
+  const { data: announcementsData, isLoading: announcementsLoading } = useQuery(
+    'homeAnnouncements',
+    () => announcementService.getAnnouncements({ limit: 3, sort: '-isPinned,-priority,-publishDate', isActive: 'true' }), // Fetch active, sorted
+    { staleTime: 5 * 60 * 1000 } // Cache for 5 minutes
+  );
+  const announcements = announcementsData?.data || [];
 
   const features = [
     {
-      icon: Calendar,
-      title: 'Easy Booking',
-      description: 'Book courts up to 7 days in advance with our simple interface'
+      icon: Zap, // Changed icon
+      title: 'Instant Booking',
+      description: 'Book your favorite courts in seconds with our streamlined process.',
+      color: 'text-primary-500',
+      bgColor: 'bg-primary-50',
     },
     {
       icon: Clock,
       title: 'Real-Time Availability',
-      description: 'See available slots instantly and get immediate confirmation'
+      description: 'See up-to-the-minute court schedules and never miss a slot.',
+      color: 'text-emerald-500',
+      bgColor: 'bg-emerald-50',
     },
     {
       icon: Users,
       title: 'Manage Reservations',
-      description: 'View, modify, and cancel your bookings easily'
+      description: 'Easily view, modify, or cancel your bookings anytime, anywhere.',
+      color: 'text-sky-500',
+      bgColor: 'bg-sky-50',
     },
     {
-      icon: Shield,
+      icon: ShieldCheck, // Changed icon
       title: 'Secure & Reliable',
-      description: 'Your data is safe with our secure booking system'
-    }
-  ]
+      description: 'Your bookings and personal data are always safe with us.',
+      color: 'text-rose-500',
+      bgColor: 'bg-rose-50',
+    },
+  ];
+
+  const howItWorksSteps = [
+    {
+      step: 1,
+      title: 'Select Date & Time',
+      description: 'Choose your preferred day and the 60-minute slot that works for you.',
+      icon: CalendarIcon,
+    },
+    {
+      step: 2,
+      title: 'Pick Your Court',
+      description: 'Browse available courts based on type, surface, or features.',
+      icon: MapPin, // Changed icon
+    },
+    {
+      step: 3,
+      title: 'Confirm & Play!',
+      description: 'Review your booking details and confirm. It\'s that simple!',
+      icon: CheckCircle, // Changed icon
+    },
+  ];
 
   return (
-    <div>
+    <div className="bg-gray-50">
       {/* Hero Section */}
-      <section className="bg-gradient-to-br from-primary-600 to-primary-800 text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24">
-          <div className="text-center">
-            <h1 className="text-4xl md:text-6xl font-bold mb-6">
-              Book Your Tennis Court Online
-            </h1>
-            <p className="text-xl md:text-2xl mb-8 text-primary-100">
-              Simple, fast, and convenient court reservations
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              {isAuthenticated ? (
-                <Link to="/book-court" className="btn-primary bg-white text-primary-600 hover:bg-gray-100 px-8 py-3">
-                  Book a Court Now
-                </Link>
-              ) : (
-                <>
-                  <Link to="/register" className="btn-primary bg-white text-primary-600 hover:bg-gray-100 px-8 py-3">
-                    Get Started
-                  </Link>
-                  <Link to="/login" className="btn-outline border-white text-white hover:bg-white hover:text-primary-600 px-8 py-3">
-                    Sign In
-                  </Link>
-                </>
-              )}
-            </div>
+      <section className="relative bg-gradient-to-br from-primary-600 to-indigo-700 text-white overflow-hidden">
+        <div className="absolute inset-0 bg-black opacity-20"></div> {/* Subtle overlay */}
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 md:py-32 text-center">
+          <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight mb-6">
+            <span className="block">Your Next Match</span>
+            <span className="block text-primary-300">Starts Here.</span>
+          </h1>
+          <p className="max-w-2xl mx-auto text-lg md:text-xl text-primary-100 mb-10">
+            Effortlessly book tennis courts online. View real-time availability, manage your reservations, and get back on the court faster.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Button
+              as={Link}
+              to={isAuthenticated ? "/book-court" : "/register"}
+              variant="primary"
+              size="lg"
+              className="bg-white text-primary-700 hover:bg-primary-50 shadow-lg transform hover:scale-105"
+              icon={isAuthenticated ? CalendarIcon : User}
+            >
+              {isAuthenticated ? 'Book a Court Now' : 'Get Started Free'}
+            </Button>
+            {!isAuthenticated && (
+              <Button
+                as={Link}
+                to="/login"
+                variant="outline"
+                size="lg"
+                className="border-primary-300 text-primary-100 hover:bg-white hover:text-primary-700 shadow-lg transform hover:scale-105"
+              >
+                Sign In
+              </Button>
+            )}
           </div>
         </div>
       </section>
 
-      {/* Urgent Announcements */}
-      {announcementsData?.data?.length > 0 && (
-        <section className="bg-warning-50 border-t-4 border-warning-500">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex items-center space-x-2 mb-2">
-              <Bell className="h-5 w-5 text-warning-600" />
-              <h3 className="font-semibold text-warning-800">Important Announcements</h3>
+      {/* Urgent Announcements Section - Using Card */}
+      {announcementsLoading && (
+        <div className="py-4 text-center"><LoadingSpinner /></div>
+      )}
+      {!announcementsLoading && announcements.length > 0 && (
+        <section className="py-8 bg-yellow-50 border-b-2 border-t-2 border-yellow-200">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center mb-3">
+                <Bell className="h-6 w-6 text-yellow-500 mr-3 flex-shrink-0" />
+                <h2 className="text-xl font-semibold text-yellow-700">Important Updates</h2>
             </div>
-            <div className="space-y-2">
-              {announcementsData.data.map(announcement => (
-                <div key={announcement._id} className="text-sm text-warning-700">
-                  <strong>{announcement.title}:</strong> {announcement.content.substring(0, 100)}...
-                  <Link to="/announcements" className="text-warning-800 underline ml-1">Read more</Link>
-                </div>
+            <div className="space-y-3">
+              {announcements.map(announcement => (
+                <Card key={announcement._id} className="bg-white border-yellow-300 shadow-sm hover:shadow-md">
+                    <div className="flex items-start space-x-3">
+                        <div className={`p-1.5 rounded-full mt-1 ${announcement.type === 'urgent' ? 'bg-error-100 text-error-600' : 'bg-yellow-100 text-yellow-600'}`}>
+                            {announcement.type === 'urgent' ? <AlertTriangle className="h-4 w-4"/> : <Info className="h-4 w-4"/>}
+                        </div>
+                        <div>
+                            <h3 className="text-sm font-semibold text-gray-800">{announcement.title}</h3>
+                            <p className="text-xs text-gray-600 mt-0.5 line-clamp-2">{announcement.content}</p>
+                            <p className="text-xs text-gray-400 mt-1">
+                                Posted: {format(parseISO(announcement.publishDate), 'MMM d, yyyy')}
+                                {announcement.isPinned && <span className="ml-2 font-medium text-primary-600">(Pinned)</span>}
+                            </p>
+                        </div>
+                    </div>
+                </Card>
               ))}
             </div>
+             {announcementsData?.count > 3 && (
+                <div className="mt-4 text-center">
+                    <Button as={Link} to="/announcements" variant="link" size="sm">
+                        View All Announcements <ArrowRight className="h-3.5 w-3.5 ml-1"/>
+                    </Button>
+                </div>
+             )}
           </div>
         </section>
       )}
 
-      {/* Features Section */}
-      <section className="py-20 bg-gray-50">
+      {/* Features Section - Using Card */}
+      <section className="py-16 sm:py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-              Why Choose Our Booking System?
+          <div className="text-center mb-12 sm:mb-16">
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-3">
+              Everything You Need, All In One Place
             </h2>
-            <p className="text-xl text-gray-600">
-              Everything you need to manage your tennis court reservations
+            <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+              Our platform is designed to make your tennis experience seamless and enjoyable.
             </p>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-            {features.map((feature, index) => (
-              <div key={index} className="bg-white rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow">
-                <div className="flex items-center justify-center w-12 h-12 bg-primary-100 text-primary-600 rounded-lg mb-4">
-                  <feature.icon className="h-6 w-6" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
+            {features.map((feature) => (
+              <Card key={feature.title} className="text-center hover:shadow-xl transition-shadow duration-300 transform hover:-translate-y-1">
+                <div className={`mx-auto flex items-center justify-center w-12 h-12 ${feature.bgColor} rounded-full mb-5 shadow-sm`}>
+                  <feature.icon className={`h-6 w-6 ${feature.color}`} />
                 </div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">{feature.title}</h3>
-                <p className="text-gray-600">{feature.description}</p>
-              </div>
+                <p className="text-sm text-gray-500 leading-relaxed">{feature.description}</p>
+              </Card>
             ))}
           </div>
         </div>
       </section>
 
-      {/* How It Works */}
-      <section className="py-20">
+      {/* How It Works Section - Using Card for each step */}
+      <section className="py-16 sm:py-20 bg-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-              How It Works
+          <div className="text-center mb-12 sm:mb-16">
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-3">
+              Get on the Court in 3 Simple Steps
             </h2>
-            <p className="text-xl text-gray-600">
-              Book your court in three simple steps
+            <p className="text-lg text-gray-600 max-w-xl mx-auto">
+              Booking your next game has never been easier.
             </p>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="text-center">
-              <div className="flex items-center justify-center w-16 h-16 bg-primary-600 text-white rounded-full mx-auto mb-4 text-2xl font-bold">
-                1
-              </div>
-              <h3 className="text-xl font-semibold mb-2">Choose Date & Time</h3>
-              <p className="text-gray-600">Select your preferred date and available time slot</p>
-            </div>
-            <div className="text-center">
-              <div className="flex items-center justify-center w-16 h-16 bg-primary-600 text-white rounded-full mx-auto mb-4 text-2xl font-bold">
-                2
-              </div>
-              <h3 className="text-xl font-semibold mb-2">Select Court</h3>
-              <p className="text-gray-600">Pick from available courts that suit your needs</p>
-            </div>
-            <div className="text-center">
-              <div className="flex items-center justify-center w-16 h-16 bg-primary-600 text-white rounded-full mx-auto mb-4 text-2xl font-bold">
-                3
-              </div>
-              <h3 className="text-xl font-semibold mb-2">Confirm Booking</h3>
-              <p className="text-gray-600">Review and confirm your reservation instantly</p>
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
+            {howItWorksSteps.map((step) => (
+              <Card key={step.step} className="text-center shadow-lg">
+                <div className="mb-4">
+                  <div className="mx-auto flex items-center justify-center w-16 h-16 bg-primary-600 text-white rounded-full text-2xl font-bold shadow-md">
+                    {step.step}
+                  </div>
+                </div>
+                <step.icon className="h-10 w-10 text-primary-500 mx-auto mb-3" />
+                <h3 className="text-xl font-semibold text-gray-800 mb-2">{step.title}</h3>
+                <p className="text-sm text-gray-600">{step.description}</p>
+              </Card>
+            ))}
           </div>
         </div>
       </section>
 
       {/* CTA Section */}
-      <section className="bg-gray-900 text-white py-16">
+      <section className="py-16 sm:py-20 bg-primary-700 text-white">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <ThumbsUp className="h-12 w-12 text-primary-300 mx-auto mb-4" />
           <h2 className="text-3xl md:text-4xl font-bold mb-4">
-            Ready to Book Your Court?
+            Ready to Elevate Your Game?
           </h2>
-          <p className="text-xl text-gray-300 mb-8">
-            Join our community and start booking courts today
+          <p className="text-lg text-primary-100 mb-8 max-w-xl mx-auto">
+            {isAuthenticated 
+              ? `Welcome back, ${user.firstName || user.username}! Your next court awaits.`
+              : "Join our community of tennis enthusiasts and start booking courts with unparalleled ease."
+            }
           </p>
-          <Link
-            to={isAuthenticated ? '/book-court' : '/register'}
-            className="btn-primary bg-primary-600 hover:bg-primary-700 text-white px-8 py-3 inline-flex items-center"
+          <Button
+            as={Link}
+            to={isAuthenticated ? "/book-court" : "/register"}
+            variant="primary"
+            size="lg"
+            className="bg-white text-primary-700 hover:bg-primary-50 shadow-xl px-10 py-3.5 transform hover:scale-105"
+            icon={isAuthenticated ? CalendarIcon : User}
           >
-            {isAuthenticated ? 'Book Now' : 'Get Started'}
-            <ArrowRight className="ml-2 h-5 w-5" />
-          </Link>
+            {isAuthenticated ? 'Find a Court' : 'Sign Up & Book Now'}
+          </Button>
         </div>
       </section>
     </div>
-  )
-}
+  );
+};
 
-export default Home
+export default Home;
