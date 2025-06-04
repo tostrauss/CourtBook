@@ -1,10 +1,11 @@
+// server/models/Court.js
 const mongoose = require('mongoose');
 
 const courtSchema = new mongoose.Schema({
   name: {
     type: String,
     required: [true, 'Court name is required'],
-    unique: true,
+    unique: true, // This creates the unique index for 'name'
     trim: true,
     maxlength: [50, 'Court name cannot exceed 50 characters']
   },
@@ -31,8 +32,7 @@ const courtSchema = new mongoose.Schema({
   }],
   isActive: {
     type: Boolean,
-    default: true,
-    index: true
+    default: true
   },
   maintenanceMode: {
     type: Boolean,
@@ -59,6 +59,11 @@ const courtSchema = new mongoose.Schema({
       type: Number,
       default: 2,
       min: [0, 'Cancellation deadline cannot be negative']
+    },
+    slotIncrementMinutes: {
+        type: Number,
+        default: 30,
+        enum: [15, 30, 60]
     }
   },
   operatingHours: {
@@ -143,6 +148,10 @@ const courtSchema = new mongoose.Schema({
 });
 
 // Indexes
+// The unique index for 'name' is created by 'unique: true' in the schema definition above.
+// So, we remove the duplicate explicit index definition for 'name'.
+// courtSchema.index({ name: 1 }, { unique: true }); // REMOVE THIS LINE
+
 courtSchema.index({ isActive: 1 });
 courtSchema.index({ type: 1, surface: 1 });
 courtSchema.index({ 'blocks.startDateTime': 1, 'blocks.endDateTime': 1 });
@@ -152,25 +161,19 @@ courtSchema.methods.isAvailable = function(startTime, endTime) {
   if (!this.isActive || this.maintenanceMode) {
     return false;
   }
-  
-  // Check if time falls within any blocks
   const start = new Date(startTime);
   const end = new Date(endTime);
-  
   return !this.blocks.some(block => {
     const blockStart = new Date(block.startDateTime);
     const blockEnd = new Date(block.endDateTime);
-    
-    // Check for overlap
     return start < blockEnd && end > blockStart;
   });
 };
 
 courtSchema.methods.getOperatingHoursForDate = function(date) {
-  const dayOfWeek = date.toLocaleLowerCase();
+  const checkDate = (date instanceof Date) ? date : new Date(date);
   const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-  const dayName = days[date.getDay()];
-  
+  const dayName = days[checkDate.getUTCDay()];
   return this.operatingHours[dayName];
 };
 

@@ -1,3 +1,4 @@
+// server/models/User.js
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
@@ -5,7 +6,7 @@ const userSchema = new mongoose.Schema({
   username: {
     type: String,
     required: [true, 'Username is required'],
-    unique: true,
+    unique: true, // This creates an index
     trim: true,
     minlength: [3, 'Username must be at least 3 characters'],
     maxlength: [30, 'Username cannot exceed 30 characters']
@@ -13,7 +14,7 @@ const userSchema = new mongoose.Schema({
   email: {
     type: String,
     required: [true, 'Email is required'],
-    unique: true,
+    unique: true, // This creates an index
     lowercase: true,
     trim: true,
     match: [
@@ -44,7 +45,7 @@ const userSchema = new mongoose.Schema({
   phoneNumber: {
     type: String,
     trim: true,
-    sparse: true,
+    sparse: true, // Allows multiple nulls if not unique, good for optional fields
     match: [
       /^\+?[\d\s-()]+$/,
       'Please provide a valid phone number'
@@ -53,6 +54,7 @@ const userSchema = new mongoose.Schema({
   isActive: {
     type: Boolean,
     default: true
+    // No need for index: true here if you define it below with schema.index, or if it's not frequently queried alone
   },
   emailVerified: {
     type: Boolean,
@@ -90,18 +92,18 @@ const userSchema = new mongoose.Schema({
 });
 
 // Indexes
-userSchema.index({ email: 1 });
-userSchema.index({ username: 1 });
-userSchema.index({ resetPasswordToken: 1 });
-userSchema.index({ emailVerificationToken: 1 });
+// Removed: userSchema.index({ email: 1 }); - covered by unique: true
+// Removed: userSchema.index({ username: 1 }); - covered by unique: true
+userSchema.index({ resetPasswordToken: 1 }); // Keep specific indexes
+userSchema.index({ emailVerificationToken: 1 }); // Keep specific indexes
+userSchema.index({ role: 1 }); // Example: if you query by role often
+userSchema.index({ isActive: 1 }); // If you query by isActive often
 
 // Pre-save hook to hash password
 userSchema.pre('save', async function(next) {
-  // Only hash if password is modified
   if (!this.isModified('password')) {
     return next();
   }
-  
   try {
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
@@ -120,7 +122,7 @@ userSchema.methods.comparePassword = async function(candidatePassword) {
 userSchema.methods.cleanExpiredTokens = function() {
   const now = new Date();
   this.refreshTokens = this.refreshTokens.filter(
-    tokenObj => tokenObj.createdAt.getTime() + 604800000 > now.getTime()
+    tokenObj => tokenObj.createdAt.getTime() + 604800000 > now.getTime() // 7 days in ms
   );
 };
 

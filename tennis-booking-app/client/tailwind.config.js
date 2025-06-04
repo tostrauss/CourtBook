@@ -20,23 +20,44 @@ export default {
           900: '#312e81',
           950: '#1e1b4b',
         },
-        success: {
+        success: { // Added more shades for success
           50: '#f0fdf4',
+          100: '#dcfce7', // Added
+          200: '#bbf7d0', // Added
+          300: '#86efac', // Added
+          400: '#4ade80', // Added
           500: '#22c55e',
           600: '#16a34a',
           700: '#15803d',
+          800: '#166534', // Added
+          900: '#14532d', // Added
+          950: '#052e16', // Added
         },
-        warning: {
+        warning: { // Added more shades for warning
           50: '#fffbeb',
+          100: '#fef3c7', // Added
+          200: '#fde68a', // Added
+          300: '#fcd34d', // Added
+          400: '#fbbf24', // Added
           500: '#f59e0b',
           600: '#d97706',
           700: '#b45309',
+          800: '#92400e', // Added
+          900: '#78350f', // Added
+          950: '#451a03', // Added
         },
-        error: {
+        error: { // Added more shades for error
           50: '#fef2f2',
+          100: '#fee2e2', // Added
+          200: '#fecaca', // Added
+          300: '#fca5a5', // Added
+          400: '#f87171', // Added
           500: '#ef4444',
           600: '#dc2626',
           700: '#b91c1c',
+          800: '#991b1b', // Added
+          900: '#7f1d1d', // Added
+          950: '#450a0a', // Added
         },
       },
       fontFamily: {

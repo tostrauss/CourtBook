@@ -1,17 +1,18 @@
 // client/src/pages/Login.jsx
 import React, { useState } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom'; // Added useNavigate, useLocation
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import { useAuth } from '../context/AuthContext';
-import { Mail, Lock } from 'lucide-react'; // Eye, EyeOff are handled by Input component
+// Corrected icon import
+import { Mail, Lock, Calendar } from 'lucide-react';
 
 // Common Components
 import Card from '../components/common/Card';
 import Input from '../components/common/Input';
 import Button from '../components/common/Button';
-import { toast } from 'react-toastify'; // For error notifications
+import { toast } from 'react-toastify';
 
 const schema = yup.object({
   email: yup.string().email('Invalid email format').required('Email is required'),
@@ -20,31 +21,32 @@ const schema = yup.object({
 
 const Login = () => {
   const { login } = useAuth();
-  const navigate = useNavigate(); // For redirection
-  const location = useLocation(); // For redirecting after login
+  const navigate = useNavigate();
+  const location = useLocation();
   const [isLoading, setIsLoading] = useState(false);
 
   const {
     register,
     handleSubmit,
     formState: { errors },
-    setError, // Use setError for API errors
+    setError,
   } = useForm({
     resolver: yupResolver(schema),
   });
 
   const onSubmit = async (data) => {
     setIsLoading(true);
-    setError('root', undefined); // Clear previous root errors
+    setError('root', undefined);
     try {
-      const result = await login(data); // authContext login now returns {success, error}
+      const result = await login(data);
       if (!result.success) {
         setError('root', { message: result.error || 'Login failed. Please check your credentials.' });
         toast.error(result.error || 'Login failed. Please check your credentials.');
       } else {
         // Navigation is handled by AuthContext's login method on success
+        // It will use location.state.from or default to /dashboard
       }
-    } catch (error) { // Catch any unexpected errors
+    } catch (error) {
         const errorMessage = error.response?.data?.message || 'An unexpected error occurred during login.';
         setError('root', { message: errorMessage });
         toast.error(errorMessage);
@@ -60,6 +62,7 @@ const Login = () => {
           header={
             <div className="text-center">
               <Link to="/" className="inline-block mb-6">
+                {/* Calendar icon is used here */}
                 <Calendar className="h-12 w-12 text-primary-600 mx-auto" />
               </Link>
               <h2 className="text-2xl font-bold text-gray-900">
@@ -90,7 +93,7 @@ const Login = () => {
               id="password"
               type="password"
               label="Password"
-              icon={Lock} // Input handles Eye/EyeOff internally
+              icon={Lock}
               placeholder="••••••••"
               register={register('password')}
               error={errors.password?.message}

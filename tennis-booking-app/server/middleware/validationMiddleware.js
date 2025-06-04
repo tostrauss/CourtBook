@@ -1,3 +1,4 @@
+// server/middleware/validationMiddleware.js
 const { body, param, query, validationResult } = require('express-validator');
 
 // Validation result handler
@@ -7,7 +8,7 @@ const handleValidationErrors = (req, res, next) => {
     return res.status(400).json({
       success: false,
       errors: errors.array().map(err => ({
-        field: err.param,
+        field: err.param || err.path, // Use err.path if err.param is undefined
         message: err.msg
       }))
     });
@@ -69,17 +70,19 @@ const validateCreateBooking = [
     .custom((value) => {
       const bookingDate = new Date(value);
       const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      today.setHours(0, 0, 0, 0); // Normalize today to start of day
+      // Allow booking for today or future dates
       return bookingDate >= today;
     })
     .withMessage('Cannot book for past dates'),
   body('startTime')
-    .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
+    .matches(/^([01]\d|2[0-3]):([0-5]\d)$/)
     .withMessage('Invalid start time format (HH:MM)'),
   body('endTime')
-    .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
+    .matches(/^([01]\d|2[0-3]):([0-5]\d)$/)
     .withMessage('Invalid end time format (HH:MM)')
     .custom((value, { req }) => {
+      // Basic check, more complex validation (e.g., duration) should be in controller
       return value > req.body.startTime;
     })
     .withMessage('End time must be after start time'),
@@ -116,7 +119,7 @@ const validateCreateCourt = [
     .withMessage('Invalid court surface'),
   body('bookingRules.minBookingDuration')
     .optional()
-    .isInt({ min: 15, max: 240 })
+    .isInt({ min: 15, max: 240 }) // Assuming duration in minutes
     .withMessage('Minimum booking duration must be between 15 and 240 minutes'),
   body('bookingRules.maxBookingDuration')
     .optional()
@@ -124,8 +127,8 @@ const validateCreateCourt = [
     .withMessage('Maximum booking duration must be between 15 and 240 minutes'),
   body('bookingRules.advanceBookingDays')
     .optional()
-    .isInt({ min: 1, max: 30 })
-    .withMessage('Advance booking days must be between 1 and 30'),
+    .isInt({ min: 1, max: 90 }) // Increased max for admin flexibility
+    .withMessage('Advance booking days must be between 1 and 90'),
   handleValidationErrors
 ];
 
@@ -158,7 +161,7 @@ const validateCreateAnnouncement = [
 const validateMongoId = (paramName = 'id') => [
   param(paramName)
     .isMongoId()
-    .withMessage('Invalid ID format'),
+    .withMessage(`Invalid ${paramName} format (must be a MongoID)`),
   handleValidationErrors
 ];
 
@@ -166,15 +169,18 @@ const validatePagination = [
   query('page')
     .optional()
     .isInt({ min: 1 })
-    .withMessage('Page must be a positive integer'),
+    .withMessage('Page must be a positive integer')
+    .toInt(),
   query('limit')
     .optional()
     .isInt({ min: 1, max: 100 })
-    .withMessage('Limit must be between 1 and 100'),
+    .withMessage('Limit must be between 1 and 100')
+    .toInt(),
   query('sort')
     .optional()
-    .matches(/^-?(createdAt|updatedAt|name|date|startTime)$/)
-    .withMessage('Invalid sort field'),
+    // Updated regex to allow comma-separated fields, optional '-', and alphanumeric characters including underscore
+    .matches(/^-?([a-zA-Z0-9_]+)(,-?([a-zA-Z0-9_]+))*$/)
+    .withMessage('Invalid sort field format. Allowed characters: a-z, A-Z, 0-9, _. Can be comma-separated and optionally start with "-". Examples: "fieldName", "-fieldName", "field1,-field2"'),
   handleValidationErrors
 ];
 
@@ -186,5 +192,5 @@ module.exports = {
   validateCreateAnnouncement,
   validateMongoId,
   validatePagination,
-  handleValidationErrors
+  handleValidationErrors // Export this if used elsewhere, though typically it's internal to this module
 };

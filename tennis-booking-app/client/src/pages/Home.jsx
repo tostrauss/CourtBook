@@ -2,30 +2,44 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { useQuery } from 'react-query'; // For fetching announcements
-import announcementService from '../services/announcementService'; // Import your service
-import { Calendar as CalendarIcon, Clock, Users, ShieldCheck, ArrowRight, Bell, Zap, ThumbsUp, CheckCircle } from 'lucide-react'; // Added more icons
+import { useQuery } from 'react-query';
+import announcementService from '../services/announcementService';
+import {
+  Calendar as CalendarIcon,
+  Clock,
+  Users,
+  ShieldCheck,
+  ArrowRight,
+  Bell,
+  Zap,
+  ThumbsUp,
+  CheckCircle,
+  MapPin,
+  AlertTriangle,
+  Info,
+  User,
+  ArrowRightCircle // Example if you wanted a different ArrowRight
+} from 'lucide-react';
+import { format, parseISO } from 'date-fns';
 
-// Common Components
+// Common Components - Corrected Paths
 import Card from '../components/common/Card';
 import Button from '../components/common/Button';
-import LoadingSpinner from '../components/common/LoadingSpinner'; // For announcements loading
-import { format, parseISO } from 'date-fns'; // For formatting announcement dates
+import LoadingSpinner from '../components/common/LoadingSpinner';
 
 const Home = () => {
-  const { user, isAuthenticated } = useAuth(); // Get user for personalized CTA
+  const { user, isAuthenticated } = useAuth();
 
-  // Fetch a few recent/important announcements
   const { data: announcementsData, isLoading: announcementsLoading } = useQuery(
     'homeAnnouncements',
-    () => announcementService.getAnnouncements({ limit: 3, sort: '-isPinned,-priority,-publishDate', isActive: 'true' }), // Fetch active, sorted
-    { staleTime: 5 * 60 * 1000 } // Cache for 5 minutes
+    () => announcementService.getAnnouncements({ limit: 3, sort: '-isPinned,-priority,-publishDate', isActive: 'true' }),
+    { staleTime: 5 * 60 * 1000 }
   );
   const announcements = announcementsData?.data || [];
 
   const features = [
     {
-      icon: Zap, // Changed icon
+      icon: Zap,
       title: 'Instant Booking',
       description: 'Book your favorite courts in seconds with our streamlined process.',
       color: 'text-primary-500',
@@ -46,7 +60,7 @@ const Home = () => {
       bgColor: 'bg-sky-50',
     },
     {
-      icon: ShieldCheck, // Changed icon
+      icon: ShieldCheck,
       title: 'Secure & Reliable',
       description: 'Your bookings and personal data are always safe with us.',
       color: 'text-rose-500',
@@ -65,13 +79,13 @@ const Home = () => {
       step: 2,
       title: 'Pick Your Court',
       description: 'Browse available courts based on type, surface, or features.',
-      icon: MapPin, // Changed icon
+      icon: MapPin,
     },
     {
       step: 3,
       title: 'Confirm & Play!',
       description: 'Review your booking details and confirm. It\'s that simple!',
-      icon: CheckCircle, // Changed icon
+      icon: CheckCircle,
     },
   ];
 
@@ -79,7 +93,7 @@ const Home = () => {
     <div className="bg-gray-50">
       {/* Hero Section */}
       <section className="relative bg-gradient-to-br from-primary-600 to-indigo-700 text-white overflow-hidden">
-        <div className="absolute inset-0 bg-black opacity-20"></div> {/* Subtle overlay */}
+        <div className="absolute inset-0 bg-black opacity-20"></div>
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 md:py-32 text-center">
           <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight mb-6">
             <span className="block">Your Next Match</span>
@@ -114,7 +128,7 @@ const Home = () => {
         </div>
       </section>
 
-      {/* Urgent Announcements Section - Using Card */}
+      {/* Urgent Announcements Section */}
       {announcementsLoading && (
         <div className="py-4 text-center"><LoadingSpinner /></div>
       )}
@@ -128,7 +142,7 @@ const Home = () => {
             <div className="space-y-3">
               {announcements.map(announcement => (
                 <Card key={announcement._id} className="bg-white border-yellow-300 shadow-sm hover:shadow-md">
-                    <div className="flex items-start space-x-3">
+                    <div className="flex items-start space-x-3 p-4">
                         <div className={`p-1.5 rounded-full mt-1 ${announcement.type === 'urgent' ? 'bg-error-100 text-error-600' : 'bg-yellow-100 text-yellow-600'}`}>
                             {announcement.type === 'urgent' ? <AlertTriangle className="h-4 w-4"/> : <Info className="h-4 w-4"/>}
                         </div>
@@ -136,7 +150,7 @@ const Home = () => {
                             <h3 className="text-sm font-semibold text-gray-800">{announcement.title}</h3>
                             <p className="text-xs text-gray-600 mt-0.5 line-clamp-2">{announcement.content}</p>
                             <p className="text-xs text-gray-400 mt-1">
-                                Posted: {format(parseISO(announcement.publishDate), 'MMM d, yyyy')}
+                                Posted: {format(parseISO(announcement.publishDate), 'MMM d,<x_bin_534>')}
                                 {announcement.isPinned && <span className="ml-2 font-medium text-primary-600">(Pinned)</span>}
                             </p>
                         </div>
@@ -155,7 +169,7 @@ const Home = () => {
         </section>
       )}
 
-      {/* Features Section - Using Card */}
+      {/* Features Section */}
       <section className="py-16 sm:py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12 sm:mb-16">
@@ -180,7 +194,7 @@ const Home = () => {
         </div>
       </section>
 
-      {/* How It Works Section - Using Card for each step */}
+      {/* How It Works Section */}
       <section className="py-16 sm:py-20 bg-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12 sm:mb-16">
@@ -216,7 +230,7 @@ const Home = () => {
             Ready to Elevate Your Game?
           </h2>
           <p className="text-lg text-primary-100 mb-8 max-w-xl mx-auto">
-            {isAuthenticated 
+            {isAuthenticated
               ? `Welcome back, ${user.firstName || user.username}! Your next court awaits.`
               : "Join our community of tennis enthusiasts and start booking courts with unparalleled ease."
             }

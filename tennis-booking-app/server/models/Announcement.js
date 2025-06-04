@@ -1,3 +1,4 @@
+// server/models/Announcement.js
 const mongoose = require('mongoose');
 
 const announcementSchema = new mongoose.Schema({
@@ -30,8 +31,8 @@ const announcementSchema = new mongoose.Schema({
   },
   isActive: {
     type: Boolean,
-    default: true,
-    index: true
+    default: true
+    // Removed index: true here, covered by schema.index below
   },
   isPinned: {
     type: Boolean,
@@ -44,12 +45,12 @@ const announcementSchema = new mongoose.Schema({
   },
   publishDate: {
     type: Date,
-    default: Date.now,
-    index: true
+    default: Date.now
+    // No index: true here, covered by compound index below
   },
   expiryDate: {
-    type: Date,
-    index: true
+    type: Date
+    // Removed index: true here, covered by schema.index below
   },
   attachments: [{
     filename: String,
@@ -74,10 +75,11 @@ const announcementSchema = new mongoose.Schema({
 });
 
 // Indexes
+// This compound index covers isActive and publishDate
 announcementSchema.index({ isActive: 1, publishDate: -1 });
 announcementSchema.index({ isPinned: -1, priority: -1, publishDate: -1 });
 announcementSchema.index({ tags: 1 });
-announcementSchema.index({ expiryDate: 1 });
+announcementSchema.index({ expiryDate: 1 }); // Index for querying by expiryDate
 
 // Methods
 announcementSchema.methods.isExpired = function() {
@@ -95,7 +97,7 @@ announcementSchema.methods.shouldDisplay = function() {
 
 announcementSchema.methods.incrementViewCount = async function() {
   this.viewCount += 1;
-  await this.save();
+  await this.save(); // Consider if this save is too frequent or should be batched
 };
 
 // Virtuals
@@ -106,10 +108,11 @@ announcementSchema.virtual('isNew').get(function() {
 
 // Pre-save
 announcementSchema.pre('save', function(next) {
-  if (this.expiryDate && this.expiryDate <= this.publishDate) {
+  if (this.isModified('expiryDate') && this.expiryDate && this.expiryDate <= this.publishDate) {
     next(new Error('Expiry date must be after publish date'));
+  } else {
+    next();
   }
-  next();
 });
 
 module.exports = mongoose.model('Announcement', announcementSchema);
