@@ -1,115 +1,85 @@
-import React, { useState, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Calendar as CalendarIcon, Clock, MapPin, Users, Info } from 'lucide-react'
-import { format, addDays, startOfDay, parse, isBefore, isAfter } from 'date-fns'
-import DatePicker from 'react-datepicker'
-import { useForm } from 'react-hook-form'
-import { yupResolver } from '@hookform/resolvers/yup'
-import * as yup from 'yup'
-import { useCourts } from '../hooks/useCourts'
-import { useCreateBooking } from '../hooks/useBookings'
+import React, { useState } from 'react'
+import { Link } from 'react-router-dom'
+import { Calendar, Clock, MapPin, X, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react'
+import { format, isPast, isFuture, isToday, addHours } from 'date-fns'
+import { useMyBookings, useCancelBooking } from '../hooks/useBookings'
 import LoadingSpinner from '../components/common/LoadingSpinner'
+import Pagination from '../components/common/Pagination'
+import ConfirmDialog from '../components/common/ConfirmDialog'
 import { toast } from 'react-toastify'
 
-const schema = yup.object({
-  date: yup.date().required('Date is required'),
-  courtId: yup.string().required('Please select a court'),
-  startTime: yup.string().required('Start time is required'),
-  duration: yup.number().min(30).required('Duration is required'),
-  players: yup.array().of(
-    yup.object({
-      name: yup.string(),
-      email: yup.string().email('Invalid email'),
-    })
-  ),
-  notes: yup.string().max(500, 'Notes cannot exceed 500 characters'),
-})
-
-const BookCourt = () => {
-  const navigate = useNavigate()
-  const [selectedDate, setSelectedDate] = useState(new Date())
-  const [selectedDuration, setSelectedDuration] = useState(60)
+const MyBookings = () => {
+  const [activeTab, setActiveTab] = useState('upcoming')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [expandedBooking, setExpandedBooking] = useState(null)
+  const [cancelBookingId, setCancelBookingId] = useState(null)
+  const [cancelReason, setCancelReason] = useState('')
   
-  const { data: courtsData, isLoading: courtsLoading } = useCourts({
-    date: format(selectedDate, 'yyyy-MM-dd'),
-    duration: selectedDuration,
+  const limit = 10
+  
+  // Fetch bookings based on active tab
+  const { data, isLoading } = useMyBookings({
+    status: activeTab === 'cancelled' ? 'cancelled' : 'confirmed',
+    startDate: activeTab === 'past' ? undefined : new Date().toISOString(),
+    endDate: activeTab === 'past' ? new Date().toISOString() : undefined,
+    page: currentPage,
+    limit,
+    sort: activeTab === 'past' ? '-date' : 'date'
   })
   
-  const createBooking = useCreateBooking()
+  const cancelBooking = useCancelBooking()
   
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-    watch,
-    setValue,
-  } = useForm({
-    resolver: yupResolver(schema),
-    defaultValues: {
-      date: new Date(),
-      duration: 60,
-      players: [{ name: '', email: '' }],
-    },
-  })
+  const bookings = data?.data || []
+  const totalPages = data?.pagination?.pages || 1
   
-  const watchCourt = watch('courtId')
-  const watchStartTime = watch('startTime')
-  
-  // Get available courts with slots
-  const availableCourts = useMemo(() => {
-    if (!courtsData?.data) return []
-    return courtsData.data.filter(court => court.availableSlots?.length > 0)
-  }, [courtsData])
-  
-  // Get selected court details
-  const selectedCourt = useMemo(() => {
-    if (!watchCourt || !availableCourts.length) return null
-    return availableCourts.find(court => court._id === watchCourt)
-  }, [watchCourt, availableCourts])
-  
-  // Calculate end time
-  const endTime = useMemo(() => {
-    if (!watchStartTime || !selectedDuration) return ''
-    const [hours, minutes] = watchStartTime.split(':').map(Number)
-    const totalMinutes = hours * 60 + minutes + selectedDuration
-    const endHours = Math.floor(totalMinutes / 60)
-    const endMinutes = totalMinutes % 60
-    return `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`
-  }, [watchStartTime, selectedDuration])
-  
-  const onSubmit = async (data) => {
-    const bookingData = {
-      courtId: data.courtId,
-      date: format(data.date, 'yyyy-MM-dd'),
-      startTime: data.startTime,
-      endTime: endTime,
-      players: data.players.filter(p => p.name || p.email),
-      notes: data.notes,
-    }
+  const handleCancelBooking = async () => {
+    if (!cancelBookingId) return
     
     try {
-      await createBooking.mutateAsync(bookingData)
-      navigate('/my-bookings')
+      await cancelBooking.mutateAsync({
+        id: cancelBookingId,
+        reason: cancelReason
+      })
+      setCancelBookingId(null)
+      setCancelReason('')
     } catch (error) {
-      console.error('Booking error:', error)
+      console.error('Cancel booking error:', error)
     }
   }
   
-  const handleDateChange = (date) => {
-    setSelectedDate(date)
-    setValue('date', date)
-    setValue('courtId', '')
-    setValue('startTime', '')
+  const canCancelBooking = (booking) => {
+    const bookingDateTime = new Date(booking.date)
+    const [hours, minutes] = booking.startTime.split(':')
+    bookingDateTime.setHours(parseInt(hours), parseInt(minutes), 0, 0)
+    
+    const cancellationDeadline = addHours(bookingDateTime, -2) // 2 hours before
+    return new Date() < cancellationDeadline
   }
   
-  const handleDurationChange = (duration) => {
-    setSelectedDuration(duration)
-    setValue('duration', duration)
-    setValue('courtId', '')
-    setValue('startTime', '')
+  const getBookingStatus = (booking) => {
+    if (booking.status === 'cancelled') return 'cancelled'
+    
+    const bookingDateTime = new Date(booking.date)
+    const [hours, minutes] = booking.startTime.split(':')
+    bookingDateTime.setHours(parseInt(hours), parseInt(minutes), 0, 0)
+    
+    if (isPast(bookingDateTime)) return 'completed'
+    if (isToday(bookingDateTime)) return 'today'
+    return 'upcoming'
   }
   
-  if (courtsLoading) {
+  const statusColors = {
+    upcoming: 'badge-primary',
+    today: 'badge-warning',
+    completed: 'badge-success',
+    cancelled: 'badge-error'
+  }
+  
+  const toggleBookingExpand = (bookingId) => {
+    setExpandedBooking(expandedBooking === bookingId ? null : bookingId)
+  }
+  
+  if (isLoading) {
     return (
       <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center">
         <LoadingSpinner size="lg" />
@@ -118,240 +88,245 @@ const BookCourt = () => {
   }
   
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <h1 className="text-3xl font-bold text-gray-900 mb-8">Book a Court</h1>
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="text-3xl font-bold text-gray-900">My Bookings</h1>
+        <Link to="/book-court" className="btn-primary">
+          Book New Court
+        </Link>
+      </div>
       
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
-        {/* Date and Duration Selection */}
-        <div className="card">
-          <div className="card-header">
-            <h2 className="text-lg font-semibold">Select Date & Duration</h2>
-          </div>
-          <div className="card-body">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="form-label">
-                  <CalendarIcon className="inline h-4 w-4 mr-1" />
-                  Date
-                </label>
-                <DatePicker
-                  selected={selectedDate}
-                  onChange={handleDateChange}
-                  minDate={new Date()}
-                  maxDate={addDays(new Date(), 7)}
-                  className="form-input w-full"
-                  dateFormat="MMMM d, yyyy"
-                />
-                {errors.date && (
-                  <p className="form-error">{errors.date.message}</p>
-                )}
-              </div>
-              
-              <div>
-                <label className="form-label">
-                  <Clock className="inline h-4 w-4 mr-1" />
-                  Duration
-                </label>
-                <select
-                  value={selectedDuration}
-                  onChange={(e) => handleDurationChange(Number(e.target.value))}
-                  className="form-input"
-                >
-                  <option value={30}>30 minutes</option>
-                  <option value={60}>1 hour</option>
-                  <option value={90}>1.5 hours</option>
-                  <option value={120}>2 hours</option>
-                </select>
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        {/* Court Selection */}
-        <div className="card">
-          <div className="card-header">
-            <h2 className="text-lg font-semibold">Select Court & Time</h2>
-          </div>
-          <div className="card-body">
-            {availableCourts.length > 0 ? (
-              <div className="space-y-4">
-                {availableCourts.map((court) => (
-                  <div
-                    key={court._id}
-                    className={`border rounded-lg p-4 cursor-pointer transition-colors ${
-                      watchCourt === court._id
-                        ? 'border-primary-500 bg-primary-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                    onClick={() => setValue('courtId', court._id)}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h3 className="font-medium text-gray-900">{court.name}</h3>
-                        <p className="text-sm text-gray-600 mt-1">
-                          <MapPin className="inline h-4 w-4 mr-1" />
-                          {court.type} • {court.surface} surface
-                        </p>
-                        {court.features?.length > 0 && (
-                          <div className="flex flex-wrap gap-2 mt-2">
-                            {court.features.map((feature) => (
-                              <span
-                                key={feature}
-                                className="badge badge-primary text-xs"
-                              >
-                                {feature.replace('_', ' ')}
-                              </span>
-                            ))}
-                          </div>
-                        )}
+      {/* Tabs */}
+      <div className="border-b border-gray-200 mb-6">
+        <nav className="-mb-px flex space-x-8">
+          <button
+            onClick={() => {
+              setActiveTab('upcoming')
+              setCurrentPage(1)
+            }}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'upcoming'
+                ? 'border-primary-500 text-primary-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Upcoming
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab('past')
+              setCurrentPage(1)
+            }}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'past'
+                ? 'border-primary-500 text-primary-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Past
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab('cancelled')
+              setCurrentPage(1)
+            }}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'cancelled'
+                ? 'border-primary-500 text-primary-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Cancelled
+          </button>
+        </nav>
+      </div>
+      
+      {/* Bookings List */}
+      {bookings.length > 0 ? (
+        <div className="space-y-4">
+          {bookings.map((booking) => {
+            const status = getBookingStatus(booking)
+            const isExpanded = expandedBooking === booking._id
+            
+            return (
+              <div key={booking._id} className="card hover:shadow-md transition-shadow">
+                <div className="p-6">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-3 mb-2">
+                        <h3 className="text-lg font-semibold text-gray-900">
+                          {booking.court.name}
+                        </h3>
+                        <span className={`badge ${statusColors[status]}`}>
+                          {status.charAt(0).toUpperCase() + status.slice(1)}
+                        </span>
                       </div>
-                      <input
-                        type="radio"
-                        {...register('courtId')}
-                        value={court._id}
-                        className="mt-1"
-                      />
-                    </div>
-                    
-                    {watchCourt === court._id && (
-                      <div className="mt-4">
-                        <label className="form-label">Available Time Slots</label>
-                        <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
-                          {court.availableSlots.map((slot) => (
-                            <button
-                              key={slot.startTime}
-                              type="button"
-                              onClick={() => setValue('startTime', slot.startTime)}
-                              className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
-                                watchStartTime === slot.startTime
-                                  ? 'bg-primary-600 text-white border-primary-600'
-                                  : 'bg-white border-gray-300 hover:border-primary-500'
-                              }`}
-                            >
-                              {slot.startTime}
-                            </button>
-                          ))}
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm text-gray-600">
+                        <div className="flex items-center">
+                          <Calendar className="h-4 w-4 mr-2" />
+                          {format(new Date(booking.date), 'EEEE, MMM d, yyyy')}
+                        </div>
+                        <div className="flex items-center">
+                          <Clock className="h-4 w-4 mr-2" />
+                          {booking.startTime} - {booking.endTime}
+                        </div>
+                        <div className="flex items-center">
+                          <MapPin className="h-4 w-4 mr-2" />
+                          {booking.court.type} • {booking.court.surface}
                         </div>
                       </div>
-                    )}
-                  </div>
-                ))}
-                
-                {errors.courtId && (
-                  <p className="form-error">{errors.courtId.message}</p>
-                )}
-                {errors.startTime && (
-                  <p className="form-error">{errors.startTime.message}</p>
-                )}
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <Info className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-600">
-                  No courts available for the selected date and duration.
-                </p>
-                <p className="text-sm text-gray-500 mt-2">
-                  Try selecting a different date or shorter duration.
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-        
-        {/* Additional Details */}
-        {watchCourt && watchStartTime && (
-          <div className="card animate-fade-in">
-            <div className="card-header">
-              <h2 className="text-lg font-semibold">Additional Details</h2>
-            </div>
-            <div className="card-body space-y-4">
-              {/* Booking Summary */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h3 className="font-medium text-gray-900 mb-2">Booking Summary</h3>
-                <dl className="space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <dt className="text-gray-600">Court:</dt>
-                    <dd className="font-medium">{selectedCourt?.name}</dd>
-                  </div>
-                  <div className="flex justify-between">
-                    <dt className="text-gray-600">Date:</dt>
-                    <dd className="font-medium">{format(selectedDate, 'MMMM d, yyyy')}</dd>
-                  </div>
-                  <div className="flex justify-between">
-                    <dt className="text-gray-600">Time:</dt>
-                    <dd className="font-medium">{watchStartTime} - {endTime}</dd>
-                  </div>
-                  <div className="flex justify-between">
-                    <dt className="text-gray-600">Duration:</dt>
-                    <dd className="font-medium">{selectedDuration} minutes</dd>
-                  </div>
-                </dl>
-              </div>
-              
-              {/* Players */}
-              <div>
-                <label className="form-label">
-                  <Users className="inline h-4 w-4 mr-1" />
-                  Additional Players (Optional)
-                </label>
-                <div className="space-y-3">
-                  {[0, 1, 2].map((index) => (
-                    <div key={index} className="grid grid-cols-2 gap-3">
-                      <input
-                        {...register(`players.${index}.name`)}
-                        placeholder="Player name"
-                        className="form-input"
-                      />
-                      <input
-                        {...register(`players.${index}.email`)}
-                        type="email"
-                        placeholder="Email (optional)"
-                        className="form-input"
-                      />
                     </div>
-                  ))}
+                    
+                    <div className="flex items-center space-x-2 ml-4">
+                      {status === 'upcoming' && canCancelBooking(booking) && (
+                        <button
+                          onClick={() => setCancelBookingId(booking._id)}
+                          className="text-error-600 hover:text-error-700 p-2 hover:bg-error-50 rounded-lg transition-colors"
+                          title="Cancel booking"
+                        >
+                          <X className="h-5 w-5" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => toggleBookingExpand(booking._id)}
+                        className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-50 rounded-lg transition-colors"
+                      >
+                        {isExpanded ? (
+                          <ChevronUp className="h-5 w-5" />
+                        ) : (
+                          <ChevronDown className="h-5 w-5" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {/* Expanded Details */}
+                  {isExpanded && (
+                    <div className="mt-4 pt-4 border-t border-gray-200 animate-slide-down">
+                      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <dt className="text-gray-500">Booking ID</dt>
+                          <dd className="font-medium text-gray-900">{booking._id}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-gray-500">Duration</dt>
+                          <dd className="font-medium text-gray-900">
+                            {(() => {
+                              const [startH, startM] = booking.startTime.split(':').map(Number)
+                              const [endH, endM] = booking.endTime.split(':').map(Number)
+                              const duration = (endH * 60 + endM) - (startH * 60 + startM)
+                              return `${duration} minutes`
+                            })()}
+                          </dd>
+                        </div>
+                        {booking.players?.length > 0 && (
+                          <div className="sm:col-span-2">
+                            <dt className="text-gray-500 mb-1">Additional Players</dt>
+                            <dd className="font-medium text-gray-900">
+                              {booking.players.map((player, index) => (
+                                <span key={index}>
+                                  {player.name}
+                                  {player.email && ` (${player.email})`}
+                                  {index < booking.players.length - 1 && ', '}
+                                </span>
+                              ))}
+                            </dd>
+                          </div>
+                        )}
+                        {booking.notes && (
+                          <div className="sm:col-span-2">
+                            <dt className="text-gray-500">Notes</dt>
+                            <dd className="font-medium text-gray-900">{booking.notes}</dd>
+                          </div>
+                        )}
+                        {booking.cancellationReason && (
+                          <div className="sm:col-span-2">
+                            <dt className="text-gray-500">Cancellation Reason</dt>
+                            <dd className="font-medium text-gray-900">{booking.cancellationReason}</dd>
+                          </div>
+                        )}
+                      </dl>
+                    </div>
+                  )}
+                  
+                  {/* Cancellation Warning */}
+                  {status === 'upcoming' && !canCancelBooking(booking) && (
+                    <div className="mt-4 flex items-center text-sm text-warning-600 bg-warning-50 p-3 rounded-lg">
+                      <AlertCircle className="h-4 w-4 mr-2 flex-shrink-0" />
+                      <span>
+                        This booking can no longer be cancelled online (less than 2 hours before start time)
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
-              
-              {/* Notes */}
-              <div>
-                <label htmlFor="notes" className="form-label">
-                  Notes (Optional)
-                </label>
-                <textarea
-                  {...register('notes')}
-                  rows={3}
-                  className="form-input"
-                  placeholder="Any special requirements or notes..."
-                />
-                {errors.notes && (
-                  <p className="form-error">{errors.notes.message}</p>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-        
-        {/* Submit Button */}
-        <div className="flex justify-end space-x-4">
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            className="btn-secondary"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={createBooking.isLoading || !watchCourt || !watchStartTime}
-            className="btn-primary"
-          >
-            {createBooking.isLoading ? 'Booking...' : 'Confirm Booking'}
-          </button>
+            )
+          })}
         </div>
-      </form>
+      ) : (
+        <div className="text-center py-12">
+          <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">
+            No {activeTab} bookings
+          </h3>
+          <p className="text-gray-600 mb-4">
+            {activeTab === 'upcoming' && "You don't have any upcoming bookings."}
+            {activeTab === 'past' && "You haven't made any bookings yet."}
+            {activeTab === 'cancelled' && "You don't have any cancelled bookings."}
+          </p>
+          {activeTab === 'upcoming' && (
+            <Link to="/book-court" className="btn-primary">
+              Book a Court
+            </Link>
+          )}
+        </div>
+      )}
+      
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="mt-8">
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+          />
+        </div>
+      )}
+      
+      {/* Cancel Booking Dialog */}
+      <ConfirmDialog
+        isOpen={!!cancelBookingId}
+        onClose={() => {
+          setCancelBookingId(null)
+          setCancelReason('')
+        }}
+        onConfirm={handleCancelBooking}
+        title="Cancel Booking"
+        confirmLabel="Cancel Booking"
+        cancelLabel="Keep Booking"
+        variant="danger"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-600">
+            Are you sure you want to cancel this booking? This action cannot be undone.
+          </p>
+          <div>
+            <label className="form-label">
+              Reason for cancellation (optional)
+            </label>
+            <textarea
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              className="form-input resize-none"
+              rows={3}
+              placeholder="Please let us know why you're cancelling..."
+            />
+          </div>
+        </div>
+      </ConfirmDialog>
     </div>
   )
 }
 
-export default BookCourt
+export default MyBookings
