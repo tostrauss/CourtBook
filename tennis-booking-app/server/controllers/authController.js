@@ -1,5 +1,7 @@
+// server/controllers/authController.js
 const crypto = require('crypto');
-const User = require('../models/User');
+const { Op } = require('sequelize');
+const { User, RefreshToken, sequelize } = require('../models');
 const { asyncHandler } = require('../middleware/errorMiddleware');
 const {
   generateAccessToken,
@@ -15,41 +17,57 @@ const emailService = require('../utils/emailService');
 const register = asyncHandler(async (req, res) => {
   const { username, email, password, firstName, lastName, phoneNumber } = req.body;
 
-  // Check if user exists
-  const userExists = await User.findOne({
-    $or: [{ email }, { username }]
-  });
+  // Start transaction
+  const transaction = await sequelize.transaction();
 
-  if (userExists) {
-    res.status(400);
-    throw new Error('User already exists with this email or username');
-  }
+  try {
+    // Check if user exists
+    const userExists = await User.findOne({
+      where: {
+        [Op.or]: [
+          { email: email.toLowerCase() },
+          { username: username }
+        ]
+      },
+      transaction
+    });
 
-  // Generate email verification token
-  const { token, hashedToken } = generateEmailVerificationToken();
+    if (userExists) {
+      await transaction.rollback();
+      res.status(400);
+      throw new Error('User already exists with this email or username');
+    }
 
-  // Create user
-  const user = await User.create({
-    username,
-    email,
-    password,
-    firstName,
-    lastName,
-    phoneNumber,
-    emailVerificationToken: hashedToken,
-    emailVerificationExpires: Date.now() + 24 * 60 * 60 * 1000 // 24 hours
-  });
+    // Generate email verification token
+    const { token, hashedToken } = generateEmailVerificationToken();
 
-  if (user) {
+    // Create user
+    const user = await User.create({
+      username,
+      email: email.toLowerCase(),
+      password,
+      firstName,
+      lastName,
+      phoneNumber,
+      emailVerificationToken: hashedToken,
+      emailVerificationExpires: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+    }, { transaction });
+
     // Generate tokens
-    const accessToken = generateAccessToken(user._id, user.role);
-    const refreshToken = generateRefreshToken(user._id);
+    const accessToken = generateAccessToken(user.id, user.role);
+    const refreshTokenValue = generateRefreshToken(user.id);
 
     // Save refresh token
-    user.refreshTokens.push({ token: refreshToken });
-    await user.save();
+    await RefreshToken.create({
+      userId: user.id,
+      token: refreshTokenValue,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+    }, { transaction });
 
-    // Send verification email
+    // Commit transaction
+    await transaction.commit();
+
+    // Send verification email (outside transaction)
     try {
       const verificationUrl = `${process.env.CLIENT_URL}/verify-email?token=${token}`;
       await emailService.sendWelcomeEmail(user, verificationUrl);
@@ -58,7 +76,7 @@ const register = asyncHandler(async (req, res) => {
     }
 
     // Set refresh token cookie
-    res.cookie('refreshToken', refreshToken, {
+    res.cookie('refreshToken', refreshTokenValue, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
@@ -68,21 +86,14 @@ const register = asyncHandler(async (req, res) => {
     res.status(201).json({
       success: true,
       data: {
-        user: {
-          id: user._id,
-          username: user.username,
-          email: user.email,
-          role: user.role,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          emailVerified: user.emailVerified
-        },
+        user: user.toJSON(),
         accessToken
       }
     });
-  } else {
-    res.status(400);
-    throw new Error('Invalid user data');
+
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
   }
 });
 
@@ -92,8 +103,13 @@ const register = asyncHandler(async (req, res) => {
 const login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
-  // Check for user
-  const user = await User.findOne({ email }).select('+password');
+  // Find user with password field
+  const user = await User.findOne({
+    where: { email: email.toLowerCase() },
+    attributes: { 
+      include: ['password'] // Include password field for comparison
+    }
+  });
 
   if (!user) {
     res.status(401);
@@ -114,36 +130,38 @@ const login = asyncHandler(async (req, res) => {
     throw new Error('Invalid credentials');
   }
 
-  // Generate tokens
-  const accessToken = generateAccessToken(user._id, user.role);
-  const refreshToken = generateRefreshToken(user._id);
+  // Clean expired tokens
+  await RefreshToken.cleanExpiredTokens(user.id);
 
-  // Clean expired tokens and save new refresh token
-  user.cleanExpiredTokens();
-  user.refreshTokens.push({ token: refreshToken });
-  user.lastLogin = new Date();
-  await user.save();
+  // Generate new tokens
+  const accessToken = generateAccessToken(user.id, user.role);
+  const refreshTokenValue = generateRefreshToken(user.id);
+
+  // Save new refresh token
+  await RefreshToken.create({
+    userId: user.id,
+    token: refreshTokenValue,
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+  });
+
+  // Update last login
+  await user.update({ lastLogin: new Date() });
 
   // Set refresh token cookie
-  res.cookie('refreshToken', refreshToken, {
+  res.cookie('refreshToken', refreshTokenValue, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
     maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
   });
 
+  // Remove password from response
+  const userResponse = user.toJSON();
+
   res.json({
     success: true,
     data: {
-      user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        emailVerified: user.emailVerified
-      },
+      user: userResponse,
       accessToken
     }
   });
@@ -156,17 +174,10 @@ const logout = asyncHandler(async (req, res) => {
   const { refreshToken } = req.cookies;
 
   if (refreshToken) {
-    // Find user and remove refresh token
-    const user = await User.findOne({
-      'refreshTokens.token': refreshToken
+    // Delete the refresh token from database
+    await RefreshToken.destroy({
+      where: { token: refreshToken }
     });
-
-    if (user) {
-      user.refreshTokens = user.refreshTokens.filter(
-        tokenObj => tokenObj.token !== refreshToken
-      );
-      await user.save();
-    }
   }
 
   // Clear cookie
@@ -201,19 +212,31 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
     throw new Error('Invalid refresh token');
   }
 
-  // Find user with this refresh token
-  const user = await User.findOne({
-    _id: decoded.id,
-    'refreshTokens.token': refreshToken
+  // Find the refresh token in database
+  const tokenRecord = await RefreshToken.findOne({
+    where: { 
+      token: refreshToken,
+      userId: decoded.id
+    },
+    include: [{
+      model: User,
+      as: 'user',
+      attributes: ['id', 'role', 'isActive']
+    }]
   });
 
-  if (!user) {
+  if (!tokenRecord || tokenRecord.isExpired()) {
     res.status(401);
-    throw new Error('Invalid refresh token');
+    throw new Error('Invalid or expired refresh token');
+  }
+
+  if (!tokenRecord.user || !tokenRecord.user.isActive) {
+    res.status(401);
+    throw new Error('User not found or inactive');
   }
 
   // Generate new access token
-  const accessToken = generateAccessToken(user._id, user.role);
+  const accessToken = generateAccessToken(tokenRecord.user.id, tokenRecord.user.role);
 
   res.json({
     success: true,
@@ -229,7 +252,9 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
 const forgotPassword = asyncHandler(async (req, res) => {
   const { email } = req.body;
 
-  const user = await User.findOne({ email });
+  const user = await User.findOne({ 
+    where: { email: email.toLowerCase() } 
+  });
 
   if (!user) {
     // Don't reveal if user exists
@@ -244,18 +269,20 @@ const forgotPassword = asyncHandler(async (req, res) => {
   const { token, hashedToken } = generatePasswordResetToken();
 
   // Save hashed token to user
-  user.resetPasswordToken = hashedToken;
-  user.resetPasswordExpires = Date.now() + 60 * 60 * 1000; // 1 hour
-  await user.save();
+  await user.update({
+    resetPasswordToken: hashedToken,
+    resetPasswordExpires: new Date(Date.now() + 60 * 60 * 1000) // 1 hour
+  });
 
   // Send email
   try {
     const resetUrl = `${process.env.CLIENT_URL}/reset-password?token=${token}`;
     await emailService.sendPasswordResetEmail(user, resetUrl);
   } catch (error) {
-    user.resetPasswordToken = undefined;
-    user.resetPasswordExpires = undefined;
-    await user.save();
+    await user.update({
+      resetPasswordToken: null,
+      resetPasswordExpires: null
+    });
     
     res.status(500);
     throw new Error('Failed to send email. Please try again later.');
@@ -280,54 +307,67 @@ const resetPassword = asyncHandler(async (req, res) => {
     .update(token)
     .digest('hex');
 
-  // Find user with valid reset token
-  const user = await User.findOne({
-    resetPasswordToken: hashedToken,
-    resetPasswordExpires: { $gt: Date.now() }
-  });
+  // Start transaction
+  const transaction = await sequelize.transaction();
 
-  if (!user) {
-    res.status(400);
-    throw new Error('Invalid or expired reset token');
-  }
-
-  // Set new password
-  user.password = password;
-  user.resetPasswordToken = undefined;
-  user.resetPasswordExpires = undefined;
-  await user.save();
-
-  // Generate new tokens for auto-login
-  const accessToken = generateAccessToken(user._id, user.role);
-  const refreshToken = generateRefreshToken(user._id);
-
-  // Save refresh token
-  user.refreshTokens.push({ token: refreshToken });
-  await user.save();
-
-  // Set refresh token cookie
-  res.cookie('refreshToken', refreshToken, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-  });
-
-  res.json({
-    success: true,
-    message: 'Password reset successful',
-    data: {
-      user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        firstName: user.firstName,
-        lastName: user.lastName
+  try {
+    // Find user with valid reset token
+    const user = await User.findOne({
+      where: {
+        resetPasswordToken: hashedToken,
+        resetPasswordExpires: { [Op.gt]: new Date() }
       },
-      accessToken
+      transaction
+    });
+
+    if (!user) {
+      await transaction.rollback();
+      res.status(400);
+      throw new Error('Invalid or expired reset token');
     }
-  });
+
+    // Update password and clear reset token fields
+    await user.update({
+      password: password,
+      resetPasswordToken: null,
+      resetPasswordExpires: null
+    }, { transaction });
+
+    // Generate new tokens for auto-login
+    const accessToken = generateAccessToken(user.id, user.role);
+    const refreshTokenValue = generateRefreshToken(user.id);
+
+    // Save refresh token
+    await RefreshToken.create({
+      userId: user.id,
+      token: refreshTokenValue,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+    }, { transaction });
+
+    // Commit transaction
+    await transaction.commit();
+
+    // Set refresh token cookie
+    res.cookie('refreshToken', refreshTokenValue, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+
+    res.json({
+      success: true,
+      message: 'Password reset successful',
+      data: {
+        user: user.toJSON(),
+        accessToken
+      }
+    });
+
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
+  }
 });
 
 // @desc    Verify email
@@ -344,8 +384,10 @@ const verifyEmail = asyncHandler(async (req, res) => {
 
   // Find user with valid verification token
   const user = await User.findOne({
-    emailVerificationToken: hashedToken,
-    emailVerificationExpires: { $gt: Date.now() }
+    where: {
+      emailVerificationToken: hashedToken,
+      emailVerificationExpires: { [Op.gt]: new Date() }
+    }
   });
 
   if (!user) {
@@ -354,10 +396,11 @@ const verifyEmail = asyncHandler(async (req, res) => {
   }
 
   // Verify email
-  user.emailVerified = true;
-  user.emailVerificationToken = undefined;
-  user.emailVerificationExpires = undefined;
-  await user.save();
+  await user.update({
+    emailVerified: true,
+    emailVerificationToken: null,
+    emailVerificationExpires: null
+  });
 
   res.json({
     success: true,

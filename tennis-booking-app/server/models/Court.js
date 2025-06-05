@@ -1,186 +1,287 @@
 // server/models/Court.js
-const mongoose = require('mongoose');
+const { Model, DataTypes, Op } = require('sequelize');
 
-const courtSchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: [true, 'Court name is required'],
-    unique: true, // This creates the unique index for 'name'
-    trim: true,
-    maxlength: [50, 'Court name cannot exceed 50 characters']
-  },
-  description: {
-    type: String,
-    trim: true,
-    maxlength: [500, 'Description cannot exceed 500 characters']
-  },
-  type: {
-    type: String,
-    required: true,
-    enum: ['indoor', 'outdoor', 'covered'],
-    default: 'outdoor'
-  },
-  surface: {
-    type: String,
-    required: true,
-    enum: ['hard', 'clay', 'grass', 'synthetic'],
-    default: 'hard'
-  },
-  features: [{
-    type: String,
-    enum: ['lights', 'seating', 'scoreboard', 'practice_wall']
-  }],
-  isActive: {
-    type: Boolean,
-    default: true
-  },
-  maintenanceMode: {
-    type: Boolean,
-    default: false
-  },
-  bookingRules: {
-    minBookingDuration: {
-      type: Number,
-      default: 30, // minutes
-      min: [15, 'Minimum booking duration must be at least 15 minutes']
-    },
-    maxBookingDuration: {
-      type: Number,
-      default: 120, // minutes
-      max: [240, 'Maximum booking duration cannot exceed 4 hours']
-    },
-    advanceBookingDays: {
-      type: Number,
-      default: 7,
-      min: [1, 'Advance booking must be at least 1 day'],
-      max: [30, 'Advance booking cannot exceed 30 days']
-    },
-    cancellationDeadlineHours: {
-      type: Number,
-      default: 2,
-      min: [0, 'Cancellation deadline cannot be negative']
-    },
-    slotIncrementMinutes: {
-        type: Number,
-        default: 30,
-        enum: [15, 30, 60]
+module.exports = (sequelize) => {
+  class Court extends Model {
+    // Instance methods
+    getOperatingHoursForDate(date) {
+      const dateObj = date instanceof Date ? date : new Date(date);
+      const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+      const dayName = days[dateObj.getUTCDay()];
+      return this.operatingHours?.[dayName] || null;
     }
-  },
-  operatingHours: {
-    monday: { open: { type: String, default: '08:00' }, close: { type: String, default: '22:00' } },
-    tuesday: { open: { type: String, default: '08:00' }, close: { type: String, default: '22:00' } },
-    wednesday: { open: { type: String, default: '08:00' }, close: { type: String, default: '22:00' } },
-    thursday: { open: { type: String, default: '08:00' }, close: { type: String, default: '22:00' } },
-    friday: { open: { type: String, default: '08:00' }, close: { type: String, default: '22:00' } },
-    saturday: { open: { type: String, default: '08:00' }, close: { type: String, default: '20:00' } },
-    sunday: { open: { type: String, default: '08:00' }, close: { type: String, default: '20:00' } }
-  },
-  pricing: {
-    basePrice: {
-      type: Number,
-      default: 0,
-      min: [0, 'Price cannot be negative']
+
+    async isAvailable(startDateTime, endDateTime) {
+      if (!this.isActive || this.maintenanceMode) {
+        return false;
+      }
+      
+      // Check for blocks
+      const CourtBlock = sequelize.models.CourtBlock;
+      if (!CourtBlock) return true;
+      
+      const blockCount = await CourtBlock.count({
+        where: {
+          court_id: this.id,
+          start_date_time: { [Op.lt]: endDateTime },
+          end_date_time: { [Op.gt]: startDateTime }
+        }
+      });
+      
+      return blockCount === 0;
+    }
+
+    // Get active blocks (not expired)
+    async getActiveBlocks() {
+      const CourtBlock = sequelize.models.CourtBlock;
+      if (!CourtBlock) return [];
+      
+      return await CourtBlock.findAll({
+        where: {
+          court_id: this.id,
+          end_date_time: { [Op.gt]: new Date() }
+        },
+        order: [['start_date_time', 'ASC']]
+      });
+    }
+
+    // Calculate price for a given time slot
+    calculatePrice(date, startTime, durationMinutes = 60) {
+      const basePrice = this.pricing?.basePrice || 0;
+      if (basePrice === 0) return 0;
+
+      // Check if it's peak hour
+      const dateObj = date instanceof Date ? date : new Date(date);
+      const dayOfWeek = dateObj.getUTCDay();
+      const [startHour, startMinute] = startTime.split(':').map(Number);
+      
+      let isPeakHour = false;
+      const peakHours = this.pricing?.peakHours || [];
+      
+      for (const peak of peakHours) {
+        if (peak.dayOfWeek !== dayOfWeek) continue;
+        
+        const [peakStartH, peakStartM] = peak.startTime.split(':').map(Number);
+        const [peakEndH, peakEndM] = peak.endTime.split(':').map(Number);
+        
+        const slotStartMinutes = startHour * 60 + startMinute;
+        const peakStartMinutes = peakStartH * 60 + peakStartM;
+        const peakEndMinutes = peakEndH * 60 + peakEndM;
+        
+        if (slotStartMinutes >= peakStartMinutes && slotStartMinutes < peakEndMinutes) {
+          isPeakHour = true;
+          break;
+        }
+      }
+
+      let price = basePrice * (durationMinutes / 60);
+      if (isPeakHour && this.pricing?.peakHourMultiplier) {
+        price *= this.pricing.peakHourMultiplier;
+      }
+
+      return parseFloat(price.toFixed(2));
+    }
+  }
+
+  Court.init({
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true
     },
-    peakHourMultiplier: {
-      type: Number,
-      default: 1.5,
-      min: [1, 'Peak hour multiplier must be at least 1']
-    },
-    peakHours: [{
-      dayOfWeek: {
-        type: Number,
-        min: 0,
-        max: 6
+    name: {
+      type: DataTypes.STRING(50),
+      allowNull: false,
+      unique: {
+        msg: 'Court name already exists'
       },
-      startTime: String,
-      endTime: String
-    }]
-  },
-  blocks: [{
-    reason: {
-      type: String,
-      required: true,
-      enum: ['maintenance', 'event', 'weather', 'other']
+      validate: {
+        notEmpty: {
+          msg: 'Court name is required'
+        },
+        len: {
+          args: [1, 50],
+          msg: 'Court name cannot exceed 50 characters'
+        }
+      }
     },
-    description: String,
-    startDateTime: {
-      type: Date,
-      required: true
+    description: {
+      type: DataTypes.TEXT,
+      validate: {
+        len: {
+          args: [0, 500],
+          msg: 'Description cannot exceed 500 characters'
+        }
+      }
     },
-    endDateTime: {
-      type: Date,
-      required: true
+    type: {
+      type: DataTypes.ENUM('indoor', 'outdoor', 'covered'),
+      allowNull: false,
+      defaultValue: 'outdoor',
+      validate: {
+        isIn: {
+          args: [['indoor', 'outdoor', 'covered']],
+          msg: 'Invalid court type'
+        }
+      }
     },
-    createdBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: true
+    surface: {
+      type: DataTypes.ENUM('hard', 'clay', 'grass', 'synthetic'),
+      allowNull: false,
+      defaultValue: 'hard',
+      validate: {
+        isIn: {
+          args: [['hard', 'clay', 'grass', 'synthetic']],
+          msg: 'Invalid surface type'
+        }
+      }
     },
-    isRecurring: {
-      type: Boolean,
-      default: false
+    features: {
+      type: DataTypes.ARRAY(DataTypes.STRING),
+      defaultValue: [],
+      validate: {
+        isValidFeatures(value) {
+          const validFeatures = ['lights', 'seating', 'scoreboard', 'practice_wall'];
+          if (Array.isArray(value)) {
+            for (const feature of value) {
+              if (!validFeatures.includes(feature)) {
+                throw new Error(`Invalid feature: ${feature}`);
+              }
+            }
+          }
+        }
+      }
     },
-    recurringPattern: {
-      type: String,
-      enum: ['daily', 'weekly', 'monthly'],
-      required: function() { return this.isRecurring; }
+    isActive: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true,
+      field: 'is_active'
     },
-    recurringEndDate: {
-      type: Date,
-      required: function() { return this.isRecurring; }
+    maintenanceMode: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+      field: 'maintenance_mode'
+    },
+    bookingRules: {
+      type: DataTypes.JSONB,
+      defaultValue: {
+        minBookingDuration: 30,
+        maxBookingDuration: 120,
+        advanceBookingDays: 7,
+        cancellationDeadlineHours: 2,
+        slotIncrementMinutes: 30
+      },
+      field: 'booking_rules',
+      validate: {
+        isValidRules(value) {
+          if (!value || typeof value !== 'object') {
+            throw new Error('Booking rules must be an object');
+          }
+          
+          const { minBookingDuration, maxBookingDuration, slotIncrementMinutes } = value;
+          
+          if (minBookingDuration && (minBookingDuration < 15 || minBookingDuration > 240)) {
+            throw new Error('Minimum booking duration must be between 15 and 240 minutes');
+          }
+          
+          if (maxBookingDuration && (maxBookingDuration < 15 || maxBookingDuration > 240)) {
+            throw new Error('Maximum booking duration must be between 15 and 240 minutes');
+          }
+          
+          if (minBookingDuration && maxBookingDuration && minBookingDuration > maxBookingDuration) {
+            throw new Error('Minimum duration cannot exceed maximum duration');
+          }
+          
+          if (slotIncrementMinutes && ![15, 30, 60].includes(slotIncrementMinutes)) {
+            throw new Error('Slot increment must be 15, 30, or 60 minutes');
+          }
+        }
+      }
+    },
+    operatingHours: {
+      type: DataTypes.JSONB,
+      defaultValue: {
+        monday: { open: '08:00', close: '22:00' },
+        tuesday: { open: '08:00', close: '22:00' },
+        wednesday: { open: '08:00', close: '22:00' },
+        thursday: { open: '08:00', close: '22:00' },
+        friday: { open: '08:00', close: '22:00' },
+        saturday: { open: '08:00', close: '20:00' },
+        sunday: { open: '08:00', close: '20:00' }
+      },
+      field: 'operating_hours',
+      validate: {
+        isValidHours(value) {
+          if (!value || typeof value !== 'object') return;
+          
+          const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+          const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
+          
+          for (const day of days) {
+            if (value[day]) {
+              const { open, close } = value[day];
+              if (!timeRegex.test(open) || !timeRegex.test(close)) {
+                throw new Error(`Invalid operating hours for ${day}`);
+              }
+              if (open >= close) {
+                throw new Error(`Close time must be after open time for ${day}`);
+              }
+            }
+          }
+        }
+      }
+    },
+    pricing: {
+      type: DataTypes.JSONB,
+      defaultValue: {
+        basePrice: 0,
+        peakHourMultiplier: 1.5,
+        peakHours: []
+      },
+      validate: {
+        isValidPricing(value) {
+          if (!value || typeof value !== 'object') return;
+          
+          if (value.basePrice !== undefined && value.basePrice < 0) {
+            throw new Error('Base price cannot be negative');
+          }
+          
+          if (value.peakHourMultiplier !== undefined && value.peakHourMultiplier < 1) {
+            throw new Error('Peak hour multiplier must be at least 1');
+          }
+        }
+      }
+    },
+    amenities: {
+      type: DataTypes.ARRAY(DataTypes.STRING),
+      defaultValue: []
+    },
+    location: {
+      type: DataTypes.JSONB,
+      defaultValue: {}
+    },
+    images: {
+      type: DataTypes.JSONB,
+      defaultValue: []
     }
-  }],
-  images: [{
-    url: String,
-    caption: String
-  }],
-  amenities: {
-    type: [String],
-    default: []
-  },
-  location: {
-    building: String,
-    floor: String,
-    section: String
-  }
-}, {
-  timestamps: true
-});
-
-// Indexes
-// The unique index for 'name' is created by 'unique: true' in the schema definition above.
-// So, we remove the duplicate explicit index definition for 'name'.
-// courtSchema.index({ name: 1 }, { unique: true }); // REMOVE THIS LINE
-
-courtSchema.index({ isActive: 1 });
-courtSchema.index({ type: 1, surface: 1 });
-courtSchema.index({ 'blocks.startDateTime': 1, 'blocks.endDateTime': 1 });
-
-// Methods
-courtSchema.methods.isAvailable = function(startTime, endTime) {
-  if (!this.isActive || this.maintenanceMode) {
-    return false;
-  }
-  const start = new Date(startTime);
-  const end = new Date(endTime);
-  return !this.blocks.some(block => {
-    const blockStart = new Date(block.startDateTime);
-    const blockEnd = new Date(block.endDateTime);
-    return start < blockEnd && end > blockStart;
+  }, {
+    sequelize,
+    modelName: 'Court',
+    tableName: 'courts',
+    underscored: true,
+    indexes: [
+      {
+        fields: ['name'],
+        unique: true
+      },
+      {
+        fields: ['is_active']
+      },
+      {
+        fields: ['type', 'surface']
+      }
+    ]
   });
+
+  return Court;
 };
-
-courtSchema.methods.getOperatingHoursForDate = function(date) {
-  const checkDate = (date instanceof Date) ? date : new Date(date);
-  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-  const dayName = days[checkDate.getUTCDay()];
-  return this.operatingHours[dayName];
-};
-
-// Virtual for active blocks
-courtSchema.virtual('activeBlocks').get(function() {
-  const now = new Date();
-  return this.blocks.filter(block => block.endDateTime > now);
-});
-
-module.exports = mongoose.model('Court', courtSchema);

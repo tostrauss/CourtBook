@@ -1,182 +1,120 @@
-const mongoose = require('mongoose');
-
-const bookingSchema = new mongoose.Schema({
-  user: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true,
-    index: true
-  },
-  court: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Court',
-    required: true,
-    index: true
-  },
-  date: {
-    type: Date,
-    required: true,
-    index: true
-  },
-  startTime: {
-    type: String,
-    required: true,
-    match: [/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Invalid time format']
-  },
-  endTime: {
-    type: String,
-    required: true,
-    match: [/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Invalid time format']
-  },
-  status: {
-    type: String,
-    enum: ['pending', 'confirmed', 'cancelled', 'completed', 'no-show'],
-    default: 'confirmed',
-    index: true
-  },
-  players: [{
-    name: {
-      type: String,
-      trim: true,
-      maxlength: [100, 'Player name cannot exceed 100 characters']
+module.exports = (sequelize, DataTypes) => {
+  const Booking = sequelize.define('Booking', {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true
     },
-    email: {
-      type: String,
-      trim: true,
-      lowercase: true,
-      match: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Invalid email format']
+    userId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      field: 'user_id'
     },
-    isGuest: {
-      type: Boolean,
-      default: true
+    courtId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      field: 'court_id'
+    },
+    date: {
+      type: DataTypes.DATEONLY,
+      allowNull: false
+    },
+    startTime: {
+      type: DataTypes.TIME,
+      allowNull: false,
+      field: 'start_time'
+    },
+    endTime: {
+      type: DataTypes.TIME,
+      allowNull: false,
+      field: 'end_time'
+    },
+    status: {
+      type: DataTypes.ENUM('pending', 'confirmed', 'cancelled', 'completed', 'no-show'),
+      defaultValue: 'confirmed'
+    },
+    players: {
+      type: DataTypes.JSONB,
+      defaultValue: []
+    },
+    notes: {
+      type: DataTypes.TEXT
+    },
+    totalPrice: {
+      type: DataTypes.DECIMAL(10, 2),
+      defaultValue: 0,
+      field: 'total_price'
+    },
+    paymentStatus: {
+      type: DataTypes.ENUM('pending', 'paid', 'refunded', 'free'),
+      defaultValue: 'free',
+      field: 'payment_status'
+    },
+    paymentMethod: {
+      type: DataTypes.ENUM('cash', 'card', 'online', 'membership'),
+      field: 'payment_method'
+    },
+    cancellationReason: {
+      type: DataTypes.TEXT,
+      field: 'cancellation_reason'
+    },
+    cancelledBy: {
+      type: DataTypes.UUID,
+      field: 'cancelled_by'
+    },
+    cancelledAt: {
+      type: DataTypes.DATE,
+      field: 'cancelled_at'
+    },
+    reminderSent: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+      field: 'reminder_sent'
+    },
+    reminderSentAt: {
+      type: DataTypes.DATE,
+      field: 'reminder_sent_at'
+    },
+    checkInTime: {
+      type: DataTypes.DATE,
+      field: 'check_in_time'
+    },
+    checkOutTime: {
+      type: DataTypes.DATE,
+      field: 'check_out_time'
     }
-  }],
-  notes: {
-    type: String,
-    maxlength: [500, 'Notes cannot exceed 500 characters']
-  },
-  totalPrice: {
-    type: Number,
-    default: 0,
-    min: [0, 'Price cannot be negative']
-  },
-  paymentStatus: {
-    type: String,
-    enum: ['pending', 'paid', 'refunded', 'free'],
-    default: 'free'
-  },
-  paymentMethod: {
-    type: String,
-    enum: ['cash', 'card', 'online', 'membership'],
-    required: function() { return this.paymentStatus === 'paid'; }
-  },
-  cancellationReason: {
-    type: String,
-    maxlength: [500, 'Cancellation reason cannot exceed 500 characters']
-  },
-  cancelledBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  },
-  cancelledAt: Date,
-  reminderSent: {
-    type: Boolean,
-    default: false
-  },
-  reminderSentAt: Date,
-  checkInTime: Date,
-  checkOutTime: Date,
-  recurring: {
-    isRecurring: {
-      type: Boolean,
-      default: false
-    },
-    recurringId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'RecurringBooking'
+  }, {
+    tableName: 'bookings',
+    validate: {
+      endTimeAfterStartTime() {
+        if (this.endTime <= this.startTime) {
+          throw new Error('End time must be after start time');
+        }
+      }
     }
-  }
-}, {
-  timestamps: true
-});
+  });
 
-// Indexes
-bookingSchema.index({ user: 1, date: 1 });
-bookingSchema.index({ court: 1, date: 1, startTime: 1 });
-bookingSchema.index({ status: 1, date: 1 });
-bookingSchema.index({ createdAt: -1 });
+  // Instance methods
+  Booking.prototype.canBeCancelled = function(cancellationDeadlineHours = 2) {
+    if (this.status !== 'confirmed') {
+      return false;
+    }
+    
+    const now = new Date();
+    const bookingDateTime = new Date(this.date);
+    const [hours, minutes] = this.startTime.split(':');
+    bookingDateTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+    
+    const hoursUntilBooking = (bookingDateTime - now) / (1000 * 60 * 60);
+    return hoursUntilBooking >= cancellationDeadlineHours;
+  };
 
-// Compound unique index to prevent double bookings
-bookingSchema.index(
-  { court: 1, date: 1, startTime: 1, status: 1 },
-  { 
-    unique: true,
-    partialFilterExpression: { status: { $in: ['confirmed', 'pending'] } }
-  }
-);
+  Booking.prototype.getDurationMinutes = function() {
+    const [startHours, startMinutes] = this.startTime.split(':').map(Number);
+    const [endHours, endMinutes] = this.endTime.split(':').map(Number);
+    
+    return (endHours * 60 + endMinutes) - (startHours * 60 + startMinutes);
+  };
 
-// Pre-save validation
-bookingSchema.pre('save', function(next) {
-  // Ensure end time is after start time
-  if (this.startTime >= this.endTime) {
-    next(new Error('End time must be after start time'));
-  }
-  
-  // Ensure booking date is not in the past
-  const bookingDate = new Date(this.date);
-  bookingDate.setHours(0, 0, 0, 0);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  
-  if (bookingDate < today && this.isNew) {
-    next(new Error('Cannot create bookings for past dates'));
-  }
-  
-  next();
-});
-
-// Methods
-bookingSchema.methods.canBeCancelled = function(cancellationDeadlineHours = 2) {
-  if (this.status !== 'confirmed') {
-    return false;
-  }
-  
-  const now = new Date();
-  const bookingDateTime = new Date(this.date);
-  const [hours, minutes] = this.startTime.split(':');
-  bookingDateTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-  
-  const hoursUntilBooking = (bookingDateTime - now) / (1000 * 60 * 60);
-  return hoursUntilBooking >= cancellationDeadlineHours;
+  return Booking;
 };
-
-bookingSchema.methods.getDurationMinutes = function() {
-  const [startHours, startMinutes] = this.startTime.split(':').map(Number);
-  const [endHours, endMinutes] = this.endTime.split(':').map(Number);
-  
-  return (endHours * 60 + endMinutes) - (startHours * 60 + startMinutes);
-};
-
-// Virtual for booking datetime
-bookingSchema.virtual('startDateTime').get(function() {
-  const dateTime = new Date(this.date);
-  const [hours, minutes] = this.startTime.split(':');
-  dateTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-  return dateTime;
-});
-
-bookingSchema.virtual('endDateTime').get(function() {
-  const dateTime = new Date(this.date);
-  const [hours, minutes] = this.endTime.split(':');
-  dateTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-  return dateTime;
-});
-
-// Transform output
-bookingSchema.methods.toJSON = function() {
-  const obj = this.toObject();
-  delete obj.__v;
-  return obj;
-};
-
-module.exports = mongoose.model('Booking', bookingSchema);

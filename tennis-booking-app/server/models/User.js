@@ -1,150 +1,233 @@
 // server/models/User.js
-const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const { Model, DataTypes } = require('sequelize');
 
-const userSchema = new mongoose.Schema({
-  username: {
-    type: String,
-    required: [true, 'Username is required'],
-    unique: true, // This creates an index
-    trim: true,
-    minlength: [3, 'Username must be at least 3 characters'],
-    maxlength: [30, 'Username cannot exceed 30 characters']
-  },
-  email: {
-    type: String,
-    required: [true, 'Email is required'],
-    unique: true, // This creates an index
-    lowercase: true,
-    trim: true,
-    match: [
-      /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-      'Please provide a valid email address'
-    ]
-  },
-  password: {
-    type: String,
-    required: [true, 'Password is required'],
-    minlength: [6, 'Password must be at least 6 characters']
-  },
-  role: {
-    type: String,
-    enum: ['member', 'admin'],
-    default: 'member'
-  },
-  firstName: {
-    type: String,
-    trim: true,
-    maxlength: [50, 'First name cannot exceed 50 characters']
-  },
-  lastName: {
-    type: String,
-    trim: true,
-    maxlength: [50, 'Last name cannot exceed 50 characters']
-  },
-  phoneNumber: {
-    type: String,
-    trim: true,
-    sparse: true, // Allows multiple nulls if not unique, good for optional fields
-    match: [
-      /^\+?[\d\s-()]+$/,
-      'Please provide a valid phone number'
-    ]
-  },
-  isActive: {
-    type: Boolean,
-    default: true
-    // No need for index: true here if you define it below with schema.index, or if it's not frequently queried alone
-  },
-  emailVerified: {
-    type: Boolean,
-    default: false
-  },
-  emailVerificationToken: String,
-  emailVerificationExpires: Date,
-  resetPasswordToken: String,
-  resetPasswordExpires: Date,
-  refreshTokens: [{
-    token: String,
-    createdAt: {
-      type: Date,
-      default: Date.now,
-      expires: 604800 // 7 days in seconds
+module.exports = (sequelize) => {
+  class User extends Model {
+    // Instance methods
+    async comparePassword(candidatePassword) {
+      return await bcrypt.compare(candidatePassword, this.password);
     }
-  }],
-  lastLogin: Date,
-  preferences: {
-    emailNotifications: {
-      type: Boolean,
-      default: true
-    },
-    smsNotifications: {
-      type: Boolean,
-      default: false
-    },
-    reminderTime: {
-      type: Number,
-      default: 60 // minutes before booking
+
+    async cleanExpiredTokens() {
+      // This is now handled by the RefreshToken model
+      const RefreshToken = sequelize.models.RefreshToken;
+      if (RefreshToken) {
+        await RefreshToken.destroy({
+          where: {
+            user_id: this.id,
+            expires_at: {
+              [sequelize.Sequelize.Op.lt]: new Date()
+            }
+          }
+        });
+      }
+    }
+
+    get fullName() {
+      if (this.firstName && this.lastName) {
+        return `${this.firstName} ${this.lastName}`;
+      }
+      return this.firstName || this.lastName || this.username;
+    }
+
+    // Override toJSON to remove sensitive fields
+    toJSON() {
+      const values = { ...this.get() };
+      delete values.password;
+      delete values.resetPasswordToken;
+      delete values.resetPasswordExpires;
+      delete values.emailVerificationToken;
+      delete values.emailVerificationExpires;
+      delete values.refreshTokens; // Remove association data
+      return values;
     }
   }
-}, {
-  timestamps: true
-});
 
-// Indexes
-// Removed: userSchema.index({ email: 1 }); - covered by unique: true
-// Removed: userSchema.index({ username: 1 }); - covered by unique: true
-userSchema.index({ resetPasswordToken: 1 }); // Keep specific indexes
-userSchema.index({ emailVerificationToken: 1 }); // Keep specific indexes
-userSchema.index({ role: 1 }); // Example: if you query by role often
-userSchema.index({ isActive: 1 }); // If you query by isActive often
+  User.init({
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true
+    },
+    username: {
+      type: DataTypes.STRING(30),
+      allowNull: false,
+      unique: {
+        msg: 'Username already exists'
+      },
+      validate: {
+        len: {
+          args: [3, 30],
+          msg: 'Username must be between 3 and 30 characters'
+        },
+        is: {
+          args: /^[a-zA-Z0-9_-]+$/,
+          msg: 'Username can only contain letters, numbers, underscores and hyphens'
+        }
+      }
+    },
+    email: {
+      type: DataTypes.STRING(255),
+      allowNull: false,
+      unique: {
+        msg: 'Email already exists'
+      },
+      validate: {
+        isEmail: {
+          msg: 'Please provide a valid email address'
+        }
+      },
+      set(value) {
+        this.setDataValue('email', value?.toLowerCase()?.trim());
+      }
+    },
+    password: {
+      type: DataTypes.STRING(255),
+      allowNull: false,
+      validate: {
+        len: {
+          args: [6, 255],
+          msg: 'Password must be at least 6 characters'
+        }
+      }
+    },
+    role: {
+      type: DataTypes.ENUM('member', 'admin'),
+      defaultValue: 'member',
+      allowNull: false
+    },
+    firstName: {
+      type: DataTypes.STRING(50),
+      field: 'first_name',
+      validate: {
+        len: {
+          args: [0, 50],
+          msg: 'First name cannot exceed 50 characters'
+        }
+      },
+      set(value) {
+        this.setDataValue('firstName', value?.trim());
+      }
+    },
+    lastName: {
+      type: DataTypes.STRING(50),
+      field: 'last_name',
+      validate: {
+        len: {
+          args: [0, 50],
+          msg: 'Last name cannot exceed 50 characters'
+        }
+      },
+      set(value) {
+        this.setDataValue('lastName', value?.trim());
+      }
+    },
+    phoneNumber: {
+      type: DataTypes.STRING(50),
+      field: 'phone_number',
+      validate: {
+        is: {
+          args: /^\+?[\d\s-()]*$/,
+          msg: 'Please provide a valid phone number'
+        }
+      },
+      set(value) {
+        this.setDataValue('phoneNumber', value?.trim());
+      }
+    },
+    isActive: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true,
+      field: 'is_active'
+    },
+    emailVerified: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+      field: 'email_verified'
+    },
+    emailVerificationToken: {
+      type: DataTypes.STRING(255),
+      field: 'email_verification_token'
+    },
+    emailVerificationExpires: {
+      type: DataTypes.DATE,
+      field: 'email_verification_expires'
+    },
+    resetPasswordToken: {
+      type: DataTypes.STRING(255),
+      field: 'reset_password_token'
+    },
+    resetPasswordExpires: {
+      type: DataTypes.DATE,
+      field: 'reset_password_expires'
+    },
+    lastLogin: {
+      type: DataTypes.DATE,
+      field: 'last_login'
+    },
+    preferences: {
+      type: DataTypes.JSONB,
+      defaultValue: {
+        emailNotifications: true,
+        smsNotifications: false,
+        reminderTime: 60
+      },
+      validate: {
+        isValidPreferences(value) {
+          if (!value || typeof value !== 'object') {
+            throw new Error('Preferences must be an object');
+          }
+        }
+      }
+    }
+  }, {
+    sequelize,
+    modelName: 'User',
+    tableName: 'users',
+    underscored: true,
+    hooks: {
+      beforeCreate: async (user) => {
+        if (user.password) {
+          const salt = await bcrypt.genSalt(10);
+          user.password = await bcrypt.hash(user.password, salt);
+        }
+      },
+      beforeUpdate: async (user) => {
+        if (user.changed('password')) {
+          const salt = await bcrypt.genSalt(10);
+          user.password = await bcrypt.hash(user.password, salt);
+        }
+      }
+    },
+    indexes: [
+      {
+        fields: ['email']
+      },
+      {
+        fields: ['username']
+      },
+      {
+        fields: ['reset_password_token'],
+        where: {
+          reset_password_token: {
+            [sequelize.Sequelize.Op.ne]: null
+          }
+        }
+      },
+      {
+        fields: ['email_verification_token'],
+        where: {
+          email_verification_token: {
+            [sequelize.Sequelize.Op.ne]: null
+          }
+        }
+      },
+      {
+        fields: ['is_active']
+      }
+    ]
+  });
 
-// Pre-save hook to hash password
-userSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) {
-    return next();
-  }
-  try {
-    const salt = await bcrypt.genSalt(10);
-    this.password = await bcrypt.hash(this.password, salt);
-    next();
-  } catch (error) {
-    next(error);
-  }
-});
-
-// Method to compare password
-userSchema.methods.comparePassword = async function(candidatePassword) {
-  return await bcrypt.compare(candidatePassword, this.password);
+  return User;
 };
-
-// Method to clean expired refresh tokens
-userSchema.methods.cleanExpiredTokens = function() {
-  const now = new Date();
-  this.refreshTokens = this.refreshTokens.filter(
-    tokenObj => tokenObj.createdAt.getTime() + 604800000 > now.getTime() // 7 days in ms
-  );
-};
-
-// Virtual for full name
-userSchema.virtual('fullName').get(function() {
-  if (this.firstName && this.lastName) {
-    return `${this.firstName} ${this.lastName}`;
-  }
-  return this.firstName || this.lastName || this.username;
-});
-
-// Remove sensitive data when converting to JSON
-userSchema.methods.toJSON = function() {
-  const obj = this.toObject();
-  delete obj.password;
-  delete obj.refreshTokens;
-  delete obj.resetPasswordToken;
-  delete obj.resetPasswordExpires;
-  delete obj.emailVerificationToken;
-  delete obj.emailVerificationExpires;
-  delete obj.__v;
-  return obj;
-};
-
-module.exports = mongoose.model('User', userSchema);
