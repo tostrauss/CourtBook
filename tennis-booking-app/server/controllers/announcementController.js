@@ -1,5 +1,7 @@
-const Announcement = require('../models/Announcement');
+// server/controllers/announcementController.js
+const { Announcement, User, sequelize } = require('../models');
 const { asyncHandler } = require('../middleware/errorMiddleware');
+const { Op } = require('sequelize');
 
 // @desc    Get all announcements
 // @route   GET /api/announcements
@@ -14,36 +16,54 @@ const getAnnouncements = asyncHandler(async (req, res) => {
     sort = '-priority,-publishDate' 
   } = req.query;
   
-  const query = {};
+  const where = {};
   
   // Filter active announcements by default
   if (isActive !== 'all') {
-    query.isActive = true;
-    query.publishDate = { $lte: new Date() };
-    query.$or = [
+    where.isActive = true;
+    where.publishDate = { [Op.lte]: new Date() };
+    where[Op.or] = [
       { expiryDate: null },
-      { expiryDate: { $gt: new Date() } }
+      { expiryDate: { [Op.gt]: new Date() } }
     ];
   }
   
-  if (type) query.type = type;
-  if (targetAudience) query.targetAudience = { $in: ['all', targetAudience] };
+  if (type) where.type = type;
+  if (targetAudience) {
+    where.targetAudience = { [Op.in]: ['all', targetAudience] };
+  }
   
-  const announcements = await Announcement.find(query)
-    .populate('author', 'username firstName lastName')
-    .sort(sort)
-    .limit(limit * 1)
-    .skip((page - 1) * limit);
+  // Parse sort parameter
+  const order = sort.split(',').map(field => {
+    const isDesc = field.startsWith('-');
+    const fieldName = isDesc ? field.substring(1) : field;
+    const fieldMap = {
+      priority: 'priority',
+      publishDate: 'publish_date',
+      isPinned: 'is_pinned'
+    };
+    return [fieldMap[fieldName] || fieldName, isDesc ? 'DESC' : 'ASC'];
+  });
   
-  const count = await Announcement.countDocuments(query);
+  const { count, rows: announcements } = await Announcement.findAndCountAll({
+    where,
+    include: [{
+      model: User,
+      as: 'author',
+      attributes: ['id', 'username', 'firstName', 'lastName']
+    }],
+    order,
+    limit: parseInt(limit),
+    offset: (parseInt(page) - 1) * parseInt(limit)
+  });
   
   res.json({
     success: true,
     count,
     pagination: {
-      page: Number(page),
-      limit: Number(limit),
-      pages: Math.ceil(count / limit)
+      page: parseInt(page),
+      limit: parseInt(limit),
+      pages: Math.ceil(count / parseInt(limit))
     },
     data: announcements
   });
@@ -53,8 +73,13 @@ const getAnnouncements = asyncHandler(async (req, res) => {
 // @route   GET /api/announcements/:id
 // @access  Public
 const getAnnouncement = asyncHandler(async (req, res) => {
-  const announcement = await Announcement.findById(req.params.id)
-    .populate('author', 'username firstName lastName');
+  const announcement = await Announcement.findByPk(req.params.id, {
+    include: [{
+      model: User,
+      as: 'author',
+      attributes: ['id', 'username', 'firstName', 'lastName']
+    }]
+  });
   
   if (!announcement) {
     res.status(404);
@@ -76,9 +101,18 @@ const getAnnouncement = asyncHandler(async (req, res) => {
 // @route   POST /api/announcements
 // @access  Private/Admin
 const createAnnouncement = asyncHandler(async (req, res) => {
-  req.body.author = req.user._id;
+  req.body.authorId = req.user.id;
   
   const announcement = await Announcement.create(req.body);
+  
+  // Reload with associations
+  await announcement.reload({
+    include: [{
+      model: User,
+      as: 'author',
+      attributes: ['id', 'username', 'firstName', 'lastName']
+    }]
+  });
   
   res.status(201).json({
     success: true,
@@ -90,23 +124,25 @@ const createAnnouncement = asyncHandler(async (req, res) => {
 // @route   PUT /api/announcements/:id
 // @access  Private/Admin
 const updateAnnouncement = asyncHandler(async (req, res) => {
-  let announcement = await Announcement.findById(req.params.id);
+  let announcement = await Announcement.findByPk(req.params.id);
   
   if (!announcement) {
     res.status(404);
     throw new Error('Announcement not found');
   }
   
-  req.body.lastModifiedBy = req.user._id;
+  req.body.lastModifiedBy = req.user.id;
   
-  announcement = await Announcement.findByIdAndUpdate(
-    req.params.id,
-    req.body,
-    {
-      new: true,
-      runValidators: true
-    }
-  );
+  await announcement.update(req.body);
+  
+  // Reload with associations
+  await announcement.reload({
+    include: [{
+      model: User,
+      as: 'author',
+      attributes: ['id', 'username', 'firstName', 'lastName']
+    }]
+  });
   
   res.json({
     success: true,
@@ -118,14 +154,14 @@ const updateAnnouncement = asyncHandler(async (req, res) => {
 // @route   DELETE /api/announcements/:id
 // @access  Private/Admin
 const deleteAnnouncement = asyncHandler(async (req, res) => {
-  const announcement = await Announcement.findById(req.params.id);
+  const announcement = await Announcement.findByPk(req.params.id);
   
   if (!announcement) {
     res.status(404);
     throw new Error('Announcement not found');
   }
   
-  await announcement.deleteOne();
+  await announcement.destroy();
   
   res.json({
     success: true,

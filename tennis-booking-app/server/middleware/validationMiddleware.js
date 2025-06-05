@@ -8,12 +8,18 @@ const handleValidationErrors = (req, res, next) => {
     return res.status(400).json({
       success: false,
       errors: errors.array().map(err => ({
-        field: err.param || err.path, // Use err.path if err.param is undefined
+        field: err.param || err.path,
         message: err.msg
       }))
     });
   }
   next();
+};
+
+// UUID validation helper
+const isValidUUID = (value) => {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(value);
 };
 
 // User validation rules
@@ -62,7 +68,7 @@ const validateLogin = [
 // Booking validation rules
 const validateCreateBooking = [
   body('courtId')
-    .isMongoId()
+    .custom(isValidUUID)
     .withMessage('Invalid court ID'),
   body('date')
     .isISO8601()
@@ -70,8 +76,7 @@ const validateCreateBooking = [
     .custom((value) => {
       const bookingDate = new Date(value);
       const today = new Date();
-      today.setHours(0, 0, 0, 0); // Normalize today to start of day
-      // Allow booking for today or future dates
+      today.setHours(0, 0, 0, 0);
       return bookingDate >= today;
     })
     .withMessage('Cannot book for past dates'),
@@ -82,7 +87,6 @@ const validateCreateBooking = [
     .matches(/^([01]\d|2[0-3]):([0-5]\d)$/)
     .withMessage('Invalid end time format (HH:MM)')
     .custom((value, { req }) => {
-      // Basic check, more complex validation (e.g., duration) should be in controller
       return value > req.body.startTime;
     })
     .withMessage('End time must be after start time'),
@@ -119,7 +123,7 @@ const validateCreateCourt = [
     .withMessage('Invalid court surface'),
   body('bookingRules.minBookingDuration')
     .optional()
-    .isInt({ min: 15, max: 240 }) // Assuming duration in minutes
+    .isInt({ min: 15, max: 240 })
     .withMessage('Minimum booking duration must be between 15 and 240 minutes'),
   body('bookingRules.maxBookingDuration')
     .optional()
@@ -127,7 +131,7 @@ const validateCreateCourt = [
     .withMessage('Maximum booking duration must be between 15 and 240 minutes'),
   body('bookingRules.advanceBookingDays')
     .optional()
-    .isInt({ min: 1, max: 90 }) // Increased max for admin flexibility
+    .isInt({ min: 1, max: 90 })
     .withMessage('Advance booking days must be between 1 and 90'),
   handleValidationErrors
 ];
@@ -158,10 +162,10 @@ const validateCreateAnnouncement = [
 ];
 
 // Common validation rules
-const validateMongoId = (paramName = 'id') => [
+const validateUUID = (paramName = 'id') => [
   param(paramName)
-    .isMongoId()
-    .withMessage(`Invalid ${paramName} format (must be a MongoID)`),
+    .custom(isValidUUID)
+    .withMessage(`Invalid ${paramName} format (must be a UUID)`),
   handleValidationErrors
 ];
 
@@ -178,9 +182,8 @@ const validatePagination = [
     .toInt(),
   query('sort')
     .optional()
-    // Updated regex to allow comma-separated fields, optional '-', and alphanumeric characters including underscore
     .matches(/^-?([a-zA-Z0-9_]+)(,-?([a-zA-Z0-9_]+))*$/)
-    .withMessage('Invalid sort field format. Allowed characters: a-z, A-Z, 0-9, _. Can be comma-separated and optionally start with "-". Examples: "fieldName", "-fieldName", "field1,-field2"'),
+    .withMessage('Invalid sort field format'),
   handleValidationErrors
 ];
 
@@ -190,7 +193,8 @@ module.exports = {
   validateCreateBooking,
   validateCreateCourt,
   validateCreateAnnouncement,
-  validateMongoId,
+  validateUUID,
+  validateMongoId: validateUUID, // Alias for compatibility
   validatePagination,
-  handleValidationErrors // Export this if used elsewhere, though typically it's internal to this module
+  handleValidationErrors
 };

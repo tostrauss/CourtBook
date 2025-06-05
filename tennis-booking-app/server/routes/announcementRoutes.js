@@ -1,30 +1,26 @@
 // server/routes/announcementRoutes.js
-const express = require('express');
-const router = express.Router();
-const {
-  getAnnouncements,
-  getAnnouncement,
-  createAnnouncement,
-  updateAnnouncement,
-  deleteAnnouncement
-} = require('../controllers/announcementController');
-const { protect, admin, optionalAuth } = require('../middleware/authMiddleware');
-const {
-  validateCreateAnnouncement,
-  validateMongoId,
-  validatePagination
-} = require('../middleware/validationMiddleware');
+// Replace validateMongoId() with validateUUID()
+router.get('/:id', optionalAuth, validateUUID(), getAnnouncement);
+router.put('/:id', validateUUID(), updateAnnouncement);
+router.delete('/:id', validateUUID(), deleteAnnouncement);
 
-// Public routes (with optional auth for view tracking if implemented)
-router.get('/', optionalAuth, validatePagination, getAnnouncements);
-router.get('/:id', optionalAuth, validateMongoId(), getAnnouncement);
+// server/routes/bookingRoutes.js
+// Replace validateMongoId() with validateUUID()
+router.get('/:id', validateUUID(), getBooking);
+router.put('/:id/cancel', validateUUID(), cancelBooking);
+router.put('/:id', admin, validateUUID(), updateBooking);
+router.delete('/:id', admin, validateUUID(), deleteBooking);
 
-// Admin routes
-// All subsequent routes in this file will use 'protect' and 'admin' middleware
-router.use(protect, admin);
+// server/routes/courtRoutes.js
+// Replace validateMongoId() with validateUUID()
+router.get('/:id', validateUUID(), getCourt);
+router.put('/:id', validateUUID(), updateCourt);
+router.delete('/:id', validateUUID(), deleteCourt);
+router.post('/:id/block', validateUUID(), blockCourt);
+router.post('/:id/unblock/:blockId', validateUUID('id'), validateUUID('blockId'), unblockCourt);
 
-router.post('/', validateCreateAnnouncement, createAnnouncement);
-router.put('/:id', validateMongoId(), updateAnnouncement);
-router.delete('/:id', validateMongoId(), deleteAnnouncement);
-
-module.exports = router;
+// server/routes/userRoutes.js
+// Replace validateMongoId() with validateUUID()
+router.get('/:id', admin, validateUUID(), getUser);
+router.put('/:id', admin, validateUUID(), updateUser);
+router.delete('/:id', admin, validateUUID(), deleteUser);

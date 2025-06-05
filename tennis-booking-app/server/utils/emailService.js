@@ -167,3 +167,5 @@ async sendBookingCancellation(user, booking, court) {
     });
   }
 }
+
+module.exports = new EmailService();
