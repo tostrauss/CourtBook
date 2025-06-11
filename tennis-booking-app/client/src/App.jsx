@@ -1,5 +1,5 @@
 import React from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, Link } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 // Corrected import paths:
 import Layout from './components/layout/MainLayout'; // Corrected path and name
@@ -19,6 +19,8 @@ const MyBookings = React.lazy(() => import('./pages/MyBookings'));
 const Profile = React.lazy(() => import('./pages/Profile'));
 const Courts = React.lazy(() => import('./pages/Courts'));
 const Announcements = React.lazy(() => import('./pages/Announcements'));
+const Lessons = React.lazy(() => import('./pages/Lessons'));
+const MyLessons = React.lazy(() => import('./pages/MyLessons'));
 
 // Admin pages
 const AdminDashboard = React.lazy(() => import('./pages/admin/ADashboard.jsx'));
@@ -26,6 +28,7 @@ const AdminUsers = React.lazy(() => import('./pages/admin/Users'));
 const AdminCourts = React.lazy(() => import('./pages/admin/Courts'));
 const AdminBookings = React.lazy(() => import('./pages/admin/Bookings'));
 const AdminAnnouncements = React.lazy(() => import('./pages/admin/Announcements'));
+const AdminLessons = React.lazy(() => import('./pages/admin/Lessons'));
 
 // A simple NotFound component (can be moved to its own file later)
 const NotFoundPage = () => (
@@ -70,12 +73,14 @@ function App() {
           <Route path="verify-email" element={<VerifyEmail />} />
           <Route path="courts" element={<Courts />} />
           <Route path="announcements" element={<Announcements />} />
+          <Route path="lessons" element={<Lessons />} />
           
           {/* Protected routes */}
           <Route element={<ProtectedRoute />}>
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="book-court" element={<BookCourt />} />
             <Route path="my-bookings" element={<MyBookings />} />
+            <Route path="my-lessons" element={<MyLessons />} />
             <Route path="profile" element={<Profile />} />
           </Route>
           
@@ -87,6 +92,7 @@ function App() {
             <Route path="courts" element={<AdminCourts />} />
             <Route path="bookings" element={<AdminBookings />} />
             <Route path="announcements" element={<AdminAnnouncements />} />
+            <Route path="lessons" element={<AdminLessons />} />
           </Route>
 
           {/* Catch-all for 404 Not Found, should be within the main Layout if you want header/footer */}

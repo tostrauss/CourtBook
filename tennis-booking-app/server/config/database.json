@@ -1,0 +1,29 @@
+{
+  "development": {
+    "username": "tennis_app_user",
+    "password": "your_secure_password",
+    "database": "tennis_booking_multiclub",
+    "host": "localhost",
+    "dialect": "postgres",
+    "logging": true
+  },
+  "test": {
+    "username": "tennis_app_user",
+    "password": "your_secure_password",
+    "database": "tennis_booking_test",
+    "host": "localhost",
+    "dialect": "postgres",
+    "logging": false
+  },
+  "production": {
+    "use_env_variable": "DATABASE_URL",
+    "dialect": "postgres",
+    "logging": false,
+    "dialectOptions": {
+      "ssl": {
+        "require": true,
+        "rejectUnauthorized": false
+      }
+    }
+  }
+}

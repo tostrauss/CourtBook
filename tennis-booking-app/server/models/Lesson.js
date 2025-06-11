@@ -1,29 +1,84 @@
 // server/models/Lesson.js - Tennis lessons with certified coaches
-const lessonSchema = new mongoose.Schema({
-  club: { type: mongoose.Schema.Types.ObjectId, ref: 'Club', required: true },
-  coach: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  student: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  court: { type: mongoose.Schema.Types.ObjectId, ref: 'Court' },
-  type: {
-    type: String,
-    enum: ['individual', 'group', 'kids', 'beginner', 'advanced', 'tournament_prep'],
-    required: true
-  },
-  date: { type: Date, required: true },
-  startTime: { type: String, required: true },
-  duration: { type: Number, required: true }, // in minutes
-  maxParticipants: { type: Number, default: 1 },
-  participants: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  price: { type: Number, required: true },
-  status: {
-    type: String,
-    enum: ['scheduled', 'confirmed', 'completed', 'cancelled'],
-    default: 'scheduled'
-  },
-  notes: String,
-  recurringPattern: {
-    type: { type: String, enum: ['weekly', 'biweekly', 'monthly'] },
-    endDate: Date,
-    exceptions: [Date]
-  }
-});
+module.exports = (sequelize) => {
+  const { DataTypes } = require('sequelize');
+  
+  const Lesson = sequelize.define('Lesson', {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true
+    },
+    club_id: {
+      type: DataTypes.UUID,
+      allowNull: false
+    },
+    coach_id: {
+      type: DataTypes.UUID,
+      allowNull: false
+    },
+    court_id: {
+      type: DataTypes.UUID,
+      allowNull: true
+    },
+    type: {
+      type: DataTypes.ENUM('individual', 'group', 'kids', 'beginner', 'advanced', 'tournament_prep'),
+      allowNull: false
+    },
+    date: {
+      type: DataTypes.DATEONLY,
+      allowNull: false
+    },
+    start_time: {
+      type: DataTypes.TIME,
+      allowNull: false
+    },
+    duration: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      comment: 'Duration in minutes'
+    },
+    max_participants: {
+      type: DataTypes.INTEGER,
+      defaultValue: 1
+    },
+    price: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false
+    },
+    status: {
+      type: DataTypes.ENUM('scheduled', 'confirmed', 'completed', 'cancelled'),
+      defaultValue: 'scheduled'
+    },
+    notes: {
+      type: DataTypes.TEXT,
+      allowNull: true
+    },
+    recurring_type: {
+      type: DataTypes.ENUM('weekly', 'biweekly', 'monthly'),
+      allowNull: true
+    },
+    recurring_end_date: {
+      type: DataTypes.DATEONLY,
+      allowNull: true
+    }
+  }, {
+    tableName: 'lessons',
+    timestamps: true,
+    indexes: [
+      {
+        fields: ['coach_id', 'date', 'start_time'],
+        unique: false
+      },
+      {
+        fields: ['court_id', 'date', 'start_time'],
+        unique: false
+      },
+      {
+        fields: ['club_id'],
+        unique: false
+      }
+    ]
+  });
+
+  return Lesson;
+};

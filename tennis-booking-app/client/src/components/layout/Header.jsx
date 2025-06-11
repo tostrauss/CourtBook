@@ -12,12 +12,14 @@ const Header = () => {
     { to: '/', label: 'Home' },
     { to: '/courts', label: 'Courts' },
     { to: '/announcements', label: 'Announcements' },
+    { to: '/lessons', label: 'Tennis Lessons' },
   ]
 
   const userLinks = [
     { to: '/dashboard', label: 'Dashboard', icon: User },
     { to: '/book-court', label: 'Book Court', icon: Calendar },
     { to: '/my-bookings', label: 'My Bookings', icon: Calendar },
+    { to: '/my-lessons', label: 'My Lessons', icon: Calendar },
     { to: '/profile', label: 'Profile', icon: Settings },
   ]
 

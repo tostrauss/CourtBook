@@ -9,6 +9,8 @@ const Booking = require('./Booking')(sequelize);
 const Announcement = require('./Announcement')(sequelize);
 const CourtBlock = require('./CourtBlock')(sequelize);
 const RefreshToken = require('./RefreshToken')(sequelize);
+const Lesson = require('./Lesson')(sequelize);
+const LessonParticipant = require('./LessonParticipant')(sequelize);
 
 // Define associations after all models are initialized
 
@@ -106,6 +108,56 @@ RefreshToken.belongsTo(User, {
   as: 'user'
 });
 
+// Lesson associations
+Lesson.belongsTo(User, {
+  foreignKey: 'coach_id',
+  as: 'coach',
+  onDelete: 'RESTRICT'
+});
+
+Lesson.belongsTo(Court, {
+  foreignKey: 'court_id',
+  as: 'court',
+  onDelete: 'SET NULL'
+});
+
+User.hasMany(Lesson, {
+  foreignKey: 'coach_id',
+  as: 'coachedLessons',
+  onDelete: 'RESTRICT'
+});
+
+Court.hasMany(Lesson, {
+  foreignKey: 'court_id',
+  as: 'lessons',
+  onDelete: 'SET NULL'
+});
+
+// LessonParticipant associations
+LessonParticipant.belongsTo(Lesson, {
+  foreignKey: 'lesson_id',
+  as: 'lesson',
+  onDelete: 'CASCADE'
+});
+
+LessonParticipant.belongsTo(User, {
+  foreignKey: 'user_id',
+  as: 'participant',
+  onDelete: 'RESTRICT'
+});
+
+Lesson.hasMany(LessonParticipant, {
+  foreignKey: 'lesson_id',
+  as: 'participants',
+  onDelete: 'CASCADE'
+});
+
+User.hasMany(LessonParticipant, {
+  foreignKey: 'user_id',
+  as: 'lessonBookings',
+  onDelete: 'RESTRICT'
+});
+
 // Helper function to sync database in correct order
 const syncDatabase = async (options = {}) => {
   try {
@@ -116,6 +168,8 @@ const syncDatabase = async (options = {}) => {
     await Announcement.sync(options);
     await CourtBlock.sync(options);
     await Booking.sync(options);
+    await Lesson.sync(options);
+    await LessonParticipant.sync(options);
     
     console.log('All models synchronized successfully');
   } catch (error) {
@@ -133,6 +187,8 @@ module.exports = {
   Announcement,
   CourtBlock,
   RefreshToken,
+  Lesson,
+  LessonParticipant,
   syncDatabase,
   // Sequelize operators for convenience
   Op: sequelize.Sequelize.Op,

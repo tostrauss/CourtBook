@@ -7,7 +7,8 @@ import {
   BookOpen, 
   Megaphone,
   Menu,
-  X 
+  X,
+  GraduationCap
 } from 'lucide-react'
 
 const AdminLayout = ({ children }) => {
@@ -19,6 +20,7 @@ const AdminLayout = ({ children }) => {
     { to: '/admin/courts', label: 'Courts', icon: Calendar },
     { to: '/admin/bookings', label: 'Bookings', icon: BookOpen },
     { to: '/admin/announcements', label: 'Announcements', icon: Megaphone },
+    { to: '/admin/lessons', label: 'Lessons', icon: GraduationCap },
   ]
 
   return (
