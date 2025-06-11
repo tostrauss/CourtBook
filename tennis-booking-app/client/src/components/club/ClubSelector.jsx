@@ -1,4 +1,9 @@
 // client/src/components/club/ClubSelector.jsx
+import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { ChevronDown, Check, Plus } from 'lucide-react';
+import { useClub } from '../../context/ClubContext';
+
 const ClubSelector = () => {
   const { currentClub, userClubs, switchClub, isMultiClub } = useClub();
   const [isOpen, setIsOpen] = useState(false);

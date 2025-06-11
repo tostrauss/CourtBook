@@ -4,7 +4,8 @@ import { useAuth } from './context/AuthContext';
 // Corrected import paths:
 import Layout from './components/layout/MainLayout'; // Corrected path and name
 import ProtectedRoute from './routes/ProtectedRoute'; // Corrected path
-import AdminRoute from './routes/AdminRoute';       // Corrected path
+import AdminRoute from './routes/AdminRoute'; // Corrected path
+import ErrorBoundary from './components/common/ErrorBoundary.jsx';
 
 // Lazy load pages for better performance
 const Home = React.lazy(() => import('./pages/Home'));
@@ -56,6 +57,7 @@ function App() {
   }
 
   return (
+    <ErrorBoundary>
     <React.Suspense fallback={
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-primary-600"></div>
@@ -103,6 +105,7 @@ function App() {
         {/* <Route path="*" element={<Navigate to="/" />} /> */} 
       </Routes>
     </React.Suspense>
+    </ErrorBoundary>
   );
 }
 
