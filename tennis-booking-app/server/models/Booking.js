@@ -1,5 +1,32 @@
-module.exports = (sequelize, DataTypes) => {
-  const Booking = sequelize.define('Booking', {
+// server/models/Booking.js
+const { Model, DataTypes } = require('sequelize');
+
+module.exports = (sequelize) => {
+  class Booking extends Model {
+    // Instance methods
+    canBeCancelled(cancellationDeadlineHours = 2) {
+      if (this.status !== 'confirmed') {
+        return false;
+      }
+      
+      const now = new Date();
+      const bookingDateTime = new Date(this.date);
+      const [hours, minutes] = this.startTime.split(':');
+      bookingDateTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+      
+      const hoursUntilBooking = (bookingDateTime - now) / (1000 * 60 * 60);
+      return hoursUntilBooking >= cancellationDeadlineHours;
+    }
+
+    getDurationMinutes() {
+      const [startHours, startMinutes] = this.startTime.split(':').map(Number);
+      const [endHours, endMinutes] = this.endTime.split(':').map(Number);
+      
+      return (endHours * 60 + endMinutes) - (startHours * 60 + startMinutes);
+    }
+  }
+
+  Booking.init({
     id: {
       type: DataTypes.UUID,
       defaultValue: DataTypes.UUIDV4,
@@ -84,7 +111,10 @@ module.exports = (sequelize, DataTypes) => {
       field: 'check_out_time'
     }
   }, {
+    sequelize,
+    modelName: 'Booking',
     tableName: 'bookings',
+    underscored: true,
     validate: {
       endTimeAfterStartTime() {
         if (this.endTime <= this.startTime) {
@@ -93,28 +123,6 @@ module.exports = (sequelize, DataTypes) => {
       }
     }
   });
-
-  // Instance methods
-  Booking.prototype.canBeCancelled = function(cancellationDeadlineHours = 2) {
-    if (this.status !== 'confirmed') {
-      return false;
-    }
-    
-    const now = new Date();
-    const bookingDateTime = new Date(this.date);
-    const [hours, minutes] = this.startTime.split(':');
-    bookingDateTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-    
-    const hoursUntilBooking = (bookingDateTime - now) / (1000 * 60 * 60);
-    return hoursUntilBooking >= cancellationDeadlineHours;
-  };
-
-  Booking.prototype.getDurationMinutes = function() {
-    const [startHours, startMinutes] = this.startTime.split(':').map(Number);
-    const [endHours, endMinutes] = this.endTime.split(':').map(Number);
-    
-    return (endHours * 60 + endMinutes) - (startHours * 60 + startMinutes);
-  };
 
   return Booking;
 };

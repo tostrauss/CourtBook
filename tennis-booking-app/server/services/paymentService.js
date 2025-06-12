@@ -6,8 +6,8 @@ class PaymentService {
     this.paymentProviders = {
       stripe: this.stripeProvider,
       klarna: this.klarnaProvider,
-      eps: this.epsProvider, // Popular in Austria
-      sofort: this.sofortProvider // Also popular in Austria
+      eps: this.epsProvider,
+      sofort: this.sofortProvider 
     };
   }
   

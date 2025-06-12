@@ -1,0 +1,4 @@
+# Future Ideas
+
+## UI/UX
+- 

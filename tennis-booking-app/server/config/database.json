@@ -1,15 +1,16 @@
+
 {
   "development": {
-    "username": "tennis_app_user",
-    "password": "your_secure_password",
+    "username": "tennis_app_tofu",
+    "password": "ToTeFu33!Fas!",
     "database": "tennis_booking_multiclub",
     "host": "localhost",
     "dialect": "postgres",
     "logging": true
   },
   "test": {
-    "username": "tennis_app_user",
-    "password": "your_secure_password",
+    "username": "tennis_app_tofu",
+    "password": "ToTeFu33!Fas!",
     "database": "tennis_booking_test",
     "host": "localhost",
     "dialect": "postgres",
